@@ -17,6 +17,7 @@ tele-sysadmin/
 ├── .env.example                # Template variabel lingkungan
 ├── .gitignore                  # Filter git tingkat produksi
 ├── README.md                   # Dokumentasi publik berstandar industri
+├── LICENSE                     # MIT Open Source License
 ├── command.txt                 # Format Perintah untuk @BotFather (/setcommands)
 ├── setup.sh / install.sh       # Script installer TUI interaktif
 ├── requirements.txt            # Dependensi Python (psutil, matplotlib)
