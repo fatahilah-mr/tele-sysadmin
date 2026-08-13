@@ -79,20 +79,24 @@ tele-sysadmin/
 
 ---
 
-## 🚀 Cara Install & Migration (1-Klik)
+## 🚀 Cara Install & Migration (Interactive TUI Wizard)
 
-### 1. Clone & Install
+Jalankan installer interaktif berbasis **whiptail TUI (Terminal User Interface)**:
+
 ```bash
 git clone git@github.com:fatahilah-mr/tele-sysadmin.git
 cd tele-sysadmin
-bash install.sh
+./setup.sh
 ```
 
-### 2. Konfigurasi Token & Chat ID
-Edit file `.env` atau jalankan:
-```bash
-notify-tele --set-config --token "BOT_TOKEN_KAMU" --chatid "CHAT_ID_KAMU"
-```
+### 🎛️ Fitur Installer Interaktif:
+1. **Template Presets Menu**:
+   * **🚀 FULL SUITE**: Install seluruh komponen CLI, Bot Daemon, & Auto-Boot Service.
+   * **📢 NOTIFIER ONLY**: Hanya CLI `notify-tele` & Boot Alert Service.
+   * **🐚 DAEMON ONLY**: Hanya CLI & Bot Command Daemon.
+   * **🎛️ CUSTOM SELECTION**: Pilih komponen secara spesifik dengan **Checkboxes** (Gunakan tombol **SPASI** untuk centang `[X]` dan **ENTER** untuk konfirmasi).
+2. **Interactive Credential Input**: Otomatis menampilkan dialog input untuk memasukkan `TELEGRAM_BOT_TOKEN` dan `TELEGRAM_CHAT_ID` saat setup.
+3. **Non-Interactive Mode**: Untuk install otomatis tanpa prompt, jalankan `./install.sh -y`.
 
 ---
 
