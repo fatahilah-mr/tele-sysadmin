@@ -1,0 +1,7 @@
+# Ignore sensitive configs & local files
+.telegram_config
+*.env
+.env*
+__pycache__/
+*.pyc
+.DS_Store
