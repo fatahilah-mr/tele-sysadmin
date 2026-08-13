@@ -1,0 +1,3 @@
+# tele-sysadmin requirements
+psutil>=5.9.0
+matplotlib>=3.5.0
