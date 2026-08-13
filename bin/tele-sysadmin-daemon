@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+import os
+import sys
+import time
+import urllib.request
+import urllib.parse
+import json
+
+# Ensure repository directory is in python path
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if not os.path.exists(os.path.join(REPO_DIR, "config")):
+    REPO_DIR = "/root/tele-sysadmin"
+if REPO_DIR not in sys.path:
+    sys.path.insert(0, REPO_DIR)
+
+from config.settings import load_config
+from core.security import verify_owner, RateLimiter
+from core.executor import execute_bash_command, escape_html, strip_ansi
+from core.logger import show_logs
+
+from modules.terminal import autocomplete_path, get_shell_keyboard
+from modules.file_editor import handle_file_editor_command, download_telegram_file, send_document
+from modules.system_monitor import get_system_status
+from modules.service_manager import handle_service_command, get_services_status
+from modules.docker_manager import handle_docker_command, get_docker_status
+from modules.process_manager import get_top_processes, kill_process
+from modules.graph_generator import generate_memory_chart_image
+from modules.backup_manager import create_backup
+from modules.security_alerts import check_ufw_status, check_fail2ban_status
+
+# Session states
+session_cwd = os.path.expanduser("~")
+shell_mode = False
+rate_limiter = RateLimiter(cooldown_seconds=0.5)
+
+def send_message(bot_token, chat_id, text, reply_markup=None):
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        print(f"Error sending message: {e}", file=sys.stderr)
+        return None
+
+def send_photo(bot_token, chat_id, photo_path, caption=""):
+    url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+    if not os.path.exists(photo_path):
+        send_message(bot_token, chat_id, f"❌ File foto tidak ditemukan: {photo_path}")
+        return False
+
+    boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+    filename = os.path.basename(photo_path)
+
+    try:
+        with open(photo_path, "rb") as f:
+            file_content = f.read()
+
+        body = []
+        body.append(f"--{boundary}".encode("utf-8"))
+        body.append(f'Content-Disposition: form-data; name="chat_id"'.encode("utf-8"))
+        body.append(b"")
+        body.append(str(chat_id).encode("utf-8"))
+
+        if caption:
+            body.append(f"--{boundary}".encode("utf-8"))
+            body.append(f'Content-Disposition: form-data; name="caption"'.encode("utf-8"))
+            body.append(b"")
+            body.append(caption.encode("utf-8"))
+
+        body.append(f"--{boundary}".encode("utf-8"))
+        body.append(f'Content-Disposition: form-data; name="photo"; filename="{filename}"'.encode("utf-8"))
+        body.append(b"Content-Type: image/png")
+        body.append(b"")
+        body.append(file_content)
+
+        body.append(f"--{boundary}--".encode("utf-8"))
+        body.append(b"")
+
+        payload = b"\r\n".join(body)
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        )
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            res = json.loads(response.read().decode("utf-8"))
+            return res.get("ok", False)
+    except Exception as e:
+        send_message(bot_token, chat_id, f"❌ Gagal mengirim photo: {e}")
+        return False
+
+def send_chunked_output(bot_token, chat_id, header, output_text):
+    clean = strip_ansi(output_text)
+    escaped = escape_html(clean)
+    
+    max_len = 3800
+    if len(escaped) <= max_len:
+        msg = f"{header}\n<pre><code>{escaped}</code></pre>"
+        send_message(bot_token, chat_id, msg)
+    else:
+        chunks = [escaped[i:i+max_len] for i in range(0, len(escaped), max_len)]
+        send_message(bot_token, chat_id, f"{header} (Part 1/{len(chunks)}):")
+        for idx, chunk in enumerate(chunks):
+            send_message(bot_token, chat_id, f"<pre><code>{chunk}</code></pre>")
+
+def handle_command(text, bot_token, chat_id, document=None):
+    global shell_mode, session_cwd
+
+    if document:
+        file_id = document.get("file_id")
+        file_name = document.get("file_name", "uploaded_file.txt")
+        caption = (text or "").strip()
+
+        if caption.startswith("/upload "):
+            target_path = caption[8:].strip()
+        elif caption.startswith("/write "):
+            target_path = caption[7:].strip()
+        elif caption:
+            target_path = caption
+        else:
+            target_path = os.path.join(session_cwd, file_name)
+
+        abs_path = os.path.abspath(os.path.join(session_cwd, target_path))
+        send_message(bot_token, chat_id, f"📥 Mengunduh dan menyimpan file ke <code>{abs_path}</code>...")
+        success, msg = download_telegram_file(bot_token, file_id, abs_path)
+        icon = "✅" if success else "❌"
+        send_message(bot_token, chat_id, f"{icon} {msg}")
+        return
+
+    text = text.strip()
+    parts = text.split()
+    first_word = parts[0].lower() if parts else ""
+
+    if first_word in ["/start", "/help"]:
+        shell_status = "🟢 AKTIF" if shell_mode else "🔴 NON-AKTIF"
+        help_text = (
+            "<b>🤖 tele-sysadmin — Master Server Management Bot</b>\n\n"
+            "<b>📌 System & Performance:</b>\n"
+            "• <code>/status</code> — Status RAM, Disk & Uptime\n"
+            "• <code>/chart</code> — Foto Grafik Tren Performa RAM/CPU\n"
+            "• <code>/services</code> — Kelola Service (systemctl)\n"
+            "• <code>/docker</code> — Kelola Container Docker\n"
+            "• <code>/top</code> — Top Proses Pemakai RAM\n"
+            "• <code>/kill &lt;PID&gt;</code> — Hentikan Proses PID\n\n"
+            "<b>📌 Remote Terminal & Files:</b>\n"
+            "• <code>/cmd &lt;command&gt;</code> — Eksekusi perintah bash\n"
+            "• <code>/shell</code> — Mode Terminal Interaktif\n"
+            "• <code>/tab &lt;query&gt;</code> — Autocomplete file/folder\n"
+            "• <code>/read &lt;file&gt;</code> — Baca isi file teks\n"
+            "• <code>/write &lt;file&gt;</code> — Overwrite file teks\n"
+            "• <code>/get &lt;file&gt;</code> — Download file VPS sebagai dokumen\n\n"
+            "<b>🛡️ Security & Backup:</b>\n"
+            "• <code>/ufw</code> — Status Firewall UFW\n"
+            "• <code>/fail2ban</code> — Status Fail2ban Security\n"
+            "• <code>/backup</code> — Backup database & folder\n"
+            "• <code>/logs</code> — Log notifikasi VPS\n\n"
+            f"<i>Mode Shell: {shell_status} | CWD: {session_cwd}</i>"
+        )
+        send_message(bot_token, chat_id, help_text)
+
+    elif first_word == "/chart" or first_word == "/graph":
+        send_message(bot_token, chat_id, "📊 Menggenerasi grafik performa memori RAM...")
+        success, chart_path = generate_memory_chart_image()
+        if success:
+            send_photo(bot_token, chat_id, chart_path, caption="📊 **Tren Penggunaan Memori RAM (24 Jam)**")
+        else:
+            send_message(bot_token, chat_id, f"❌ Gagal menggenerasi grafik: {chart_path}")
+
+    elif first_word in ["/services", "/service"]:
+        res_text = handle_service_command(text)
+        send_message(bot_token, chat_id, res_text)
+
+    elif first_word in ["/docker"]:
+        res_text = handle_docker_command(text)
+        send_message(bot_token, chat_id, res_text)
+
+    elif first_word == "/top":
+        limit = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 10
+        send_message(bot_token, chat_id, get_top_processes(limit))
+
+    elif first_word == "/kill":
+        if len(parts) < 2:
+            send_message(bot_token, chat_id, "Gunakan: <code>/kill &lt;PID&gt;</code>")
+        else:
+            send_message(bot_token, chat_id, kill_process(parts[1]))
+
+    elif first_word == "/backup":
+        target_type = parts[1] if len(parts) > 1 else "db"
+        send_message(bot_token, chat_id, "💾 Membuat backup archive...")
+        ok, msg, backup_file = create_backup(target_type)
+        send_message(bot_token, chat_id, msg)
+        if ok and backup_file and os.path.exists(backup_file):
+            send_document(bot_token, chat_id, backup_file, caption=f"💾 Backup Archive ({target_type})")
+
+    elif first_word == "/ufw":
+        send_message(bot_token, chat_id, check_ufw_status())
+
+    elif first_word == "/fail2ban":
+        send_message(bot_token, chat_id, check_fail2ban_status())
+
+    elif first_word in ["/read", "/cat", "/get", "/download", "/write", "/append"]:
+        handle_file_editor_command(text, bot_token, chat_id, session_cwd)
+
+    elif first_word == "/shell":
+        shell_mode = not shell_mode
+        if shell_mode:
+            msg = (
+                "<b>🐚 MODE TERMINAL INTERAKTIF: AKTIF</b>\n\n"
+                f"📂 <b>Direktori:</b> <code>{session_cwd}</code>\n\n"
+                "• Ketik perintah terminal apa saja di chat ini.\n"
+                "• Gunakan <b>Tombol Keyboard di bawah</b> untuk perintah cepat!\n"
+                "• Ketik <code>/exit</code> untuk mematikan mode ini."
+            )
+            send_message(bot_token, chat_id, msg, reply_markup=get_shell_keyboard())
+        else:
+            msg = "<b>🔴 MODE TERMINAL INTERAKTIF: NON-AKTIF</b>\nSistem kembali ke mode normal."
+            send_message(bot_token, chat_id, msg, reply_markup={"remove_keyboard": True})
+
+    elif first_word in ["/exit", "exit"] and shell_mode:
+        shell_mode = False
+        send_message(bot_token, chat_id, "<b>🔴 MODE TERMINAL INTERAKTIF: NON-AKTIF</b>", reply_markup={"remove_keyboard": True})
+
+    elif first_word in ["/tab", "tab"]:
+        query = text[len(parts[0]):].strip() if len(parts) > 1 else ""
+        sug_text = autocomplete_path(query, session_cwd)
+        send_message(bot_token, chat_id, sug_text)
+
+    elif first_word in ["/cmd", "/sh", "/exec"]:
+        if len(parts) < 2:
+            send_message(bot_token, chat_id, "Gunakan format: <code>/cmd &lt;perintah_terminal&gt;</code>")
+            return
+        cmd_to_run = text[len(parts[0]):].strip()
+        header = f"<b>🐚 Executing:</b> <code>{escape_html(cmd_to_run)}</code>\n📂 <b>CWD:</b> <code>{escape_html(session_cwd)}</code>"
+        success, out, session_cwd = execute_bash_command(cmd_to_run, cwd=session_cwd)
+        send_chunked_output(bot_token, chat_id, header, out)
+
+    elif first_word == "/cd":
+        target = text[3:].strip() if len(text) > 2 else ""
+        cmd_to_run = f"cd {target}"
+        success, out, session_cwd = execute_bash_command(cmd_to_run, cwd=session_cwd)
+        icon = "✅" if success else "❌"
+        send_message(bot_token, chat_id, f"{icon} {out}")
+
+    elif first_word == "/pwd":
+        send_message(bot_token, chat_id, f"📂 <b>Current Working Directory:</b> <code>{session_cwd}</code>")
+
+    elif first_word in ["/logs", "/log"]:
+        limit = 10
+        if len(parts) > 1 and parts[1].isdigit():
+            limit = min(int(parts[1]), 30)
+        logs_text = show_logs(limit)
+        send_message(bot_token, chat_id, logs_text)
+
+    elif first_word == "/status":
+        status_text = get_system_status(session_cwd)
+        send_message(bot_token, chat_id, status_text)
+
+    elif first_word == "/ping":
+        send_message(bot_token, chat_id, "<b>Pong! ⚡</b>\nVPS Debian kamu aktif & berjalan normal.")
+
+    else:
+        if shell_mode:
+            header = f"<b>🐚 Executing:</b> <code>{escape_html(text)}</code>\n📂 <b>CWD:</b> <code>{escape_html(session_cwd)}</code>"
+            success, out, session_cwd = execute_bash_command(text, cwd=session_cwd)
+            send_chunked_output(bot_token, chat_id, header, out)
+        else:
+            send_message(bot_token, chat_id, "Perintah tidak dikenali. Ketik <code>/cmd <command></code> atau aktifkan <code>/shell</code>. Gunakan <code>/help</code> untuk bantuan.")
+
+def main():
+    bot_token, owner_chat_id = load_config()
+
+    if not bot_token or not owner_chat_id:
+        print("Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing in config!", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Starting tele-sysadmin Command Daemon for Chat ID {owner_chat_id}...")
+    offset = 0
+
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{bot_token}/getUpdates?offset={offset}&timeout=30"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=35) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                if data.get("ok"):
+                    for update in data.get("result", []):
+                        offset = update["update_id"] + 1
+                        message = update.get("message", {})
+                        from_id = str(message.get("from", {}).get("id", ""))
+                        text = message.get("text", "") or message.get("caption", "")
+                        document = message.get("document")
+
+                        if verify_owner(from_id, owner_chat_id):
+                            if text or document:
+                                if rate_limiter.is_allowed(from_id):
+                                    handle_command(text, bot_token, owner_chat_id, document=document)
+        except urllib.error.URLError:
+            time.sleep(5)
+        except Exception as e:
+            print(f"Error in long polling loop: {e}", file=sys.stderr)
+            time.sleep(5)
+
+if __name__ == "__main__":
+    main()

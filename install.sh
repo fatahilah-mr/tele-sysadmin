@@ -1,55 +1,52 @@
 #!/usr/bin/env bash
 
-# Telegram Notifier Auto Installer
-# Location: /root/telegram-notifier/install.sh
+# tele-sysadmin Production Auto Installer
+# Location: /root/tele-sysadmin/install.sh
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_BIN="/usr/local/bin/notify-tele"
-DAEMON_BIN="/usr/local/bin/tele-bot-daemon"
+NOTIFY_BIN="/usr/local/bin/notify-tele"
+DAEMON_BIN="/usr/local/bin/tele-sysadmin-daemon"
 
 echo "========================================="
-echo "   Installing Telegram Notifier Suite    "
+echo "   Installing tele-sysadmin Master Suite "
 echo "========================================="
 
-if [ ! -f "$SCRIPT_DIR/notify-tele" ]; then
-    echo "Error: notify-tele file not found in $SCRIPT_DIR!"
+if [ ! -f "$SCRIPT_DIR/bin/notify-tele" ]; then
+    echo "Error: bin/notify-tele file not found in $SCRIPT_DIR!"
     exit 1
 fi
 
-echo "[1/4] Copying notify-tele to $TARGET_BIN..."
-cp "$SCRIPT_DIR/notify-tele" "$TARGET_BIN"
-chmod +x "$TARGET_BIN"
+echo "[1/4] Installing CLI executables to /usr/local/bin..."
+cp "$SCRIPT_DIR/bin/notify-tele" "$NOTIFY_BIN"
+cp "$SCRIPT_DIR/bin/tele-sysadmin-daemon" "$DAEMON_BIN"
+chmod +x "$NOTIFY_BIN" "$DAEMON_BIN"
 
-if [ -f "$SCRIPT_DIR/tele-bot-daemon" ]; then
-    echo "[2/4] Copying tele-bot-daemon to $DAEMON_BIN..."
-    cp "$SCRIPT_DIR/tele-bot-daemon" "$DAEMON_BIN"
-    chmod +x "$DAEMON_BIN"
+if [ -f "$SCRIPT_DIR/services/tele-sysadmin-boot.service" ]; then
+    echo "[2/4] Setting up boot notification service..."
+    cp "$SCRIPT_DIR/services/tele-sysadmin-boot.service" "/etc/systemd/system/tele-sysadmin-boot.service"
+    systemctl daemon-reload || true
+    systemctl enable tele-sysadmin-boot.service || true
 fi
 
-if [ -f "$SCRIPT_DIR/telegram-boot-notify.service" ]; then
-    echo "[3/4] Setting up automatic boot notification service..."
-    cp "$SCRIPT_DIR/telegram-boot-notify.service" "/etc/systemd/system/telegram-boot-notify.service"
+if [ -f "$SCRIPT_DIR/services/tele-sysadmin-daemon.service" ]; then
+    echo "[3/4] Setting up master bot daemon service..."
+    cp "$SCRIPT_DIR/services/tele-sysadmin-daemon.service" "/etc/systemd/system/tele-sysadmin-daemon.service"
     systemctl daemon-reload || true
-    systemctl enable telegram-boot-notify.service || true
-fi
-
-if [ -f "$SCRIPT_DIR/telegram-bot-daemon.service" ]; then
-    echo "[4/4] Setting up Telegram bot command daemon service..."
-    cp "$SCRIPT_DIR/telegram-bot-daemon.service" "/etc/systemd/system/telegram-bot-daemon.service"
-    systemctl daemon-reload || true
-    systemctl enable telegram-bot-daemon.service || true
-    systemctl restart telegram-bot-daemon.service || true
+    systemctl enable tele-sysadmin-daemon.service || true
+    systemctl restart tele-sysadmin-daemon.service || true
 fi
 
 if [ ! -f "$SCRIPT_DIR/.env" ] && [ -f "$SCRIPT_DIR/.env.example" ]; then
-    echo "[Config] Creating .env file from .env.example..."
+    echo "[4/4] Creating .env file from .env.example..."
     cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
 fi
 
 echo ""
-echo "Installation complete!"
-echo "Next step: Set your credentials in .env file or run:"
+echo "========================================="
+echo "   tele-sysadmin installation complete!  "
+echo "========================================="
+echo "Configure credentials in .env or run:"
 echo "  notify-tele --set-config --token \"YOUR_BOT_TOKEN\" --chatid \"YOUR_CHAT_ID\""
 echo "========================================="

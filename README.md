@@ -1,73 +1,107 @@
-# 📱 Telegram Notifier Suite & Remote VPS Terminal (`notify-tele`)
+# 🤖 tele-sysadmin — Master Telegram VPS Server Management Suite
 
-Dokumentasi dan suite lengkap untuk:
-1. Mengirim **notifikasi kustom berdasarkan jenis/kategori** dari VPS ke Telegram Bot.
-2. Membaca **log notifikasi & status VPS secara interaktif**.
-3. **Mengeksekusi perintah terminal VPS langsung dari Telegram Bot** (Remote Terminal / Shell via Telegram).
+![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-production--ready-brightgreen)
 
-Tool ini sangat ringan (daemon RAM ~3 MB), berbasis Python standard library, dan dirancang agar mudah dipicu oleh pengguna (User) maupun AI Coding Assistant (Antigravity).
+**tele-sysadmin** adalah suite manajemen server Linux/VPS tingkat produksi (*Production-Grade*) melalui Telegram Bot. 
 
----
-
-## 📂 Isi Folder
-
-* `notify-tele` : Script CLI pengirim notifikasi.
-* `tele-bot-daemon` : Daemon penerima & eksekutor perintah terminal dari Telegram.
-* `install.sh` : Script installer otomatis.
-* `telegram-boot-notify.service` : Systemd service notifikasi boot otomatis.
-* `telegram-bot-daemon.service` : Systemd service daemon terminal interaktif.
-* `README.md` : Dokumentasi lengkap ini.
+Dirancang secara **Modular Clean Architecture**, berbobot super ringan (RAM Daemon **~1.5 MB**), tanpa dependensi eksternal yang membengkak, serta mengintegrasikan pemantauan performa visual, eksekusi terminal jarak jauh, editor file interaktif, kontrol Docker/Systemd, dan notifikasi kustom.
 
 ---
 
-## 🐚 Akses Terminal VPS Langsung dari Chat Telegram Bot
+## 🏗️ Struktur Arsitektur Modular Codebase
 
-Kamu bisa mengeksekusi perintah bash / terminal VPS kamu langsung melalui chat Telegram:
-
-### 1. Perintah Sekali Jalan (`/cmd`)
-Gunakan format `/cmd <perintah>`:
-* `/cmd ls -la` — Melihat isi folder saat ini.
-* `/cmd systemctl status nginx` — Mengecek status service.
-* `/cmd df -h` — Mengecek sisa disk.
-* `/cmd free -h` — Mengecek penggunaan RAM.
-* `/cd /root/projects` — Pindah ke direktori tertentu.
-* `/pwd` — Melihat direktori kerja saat ini.
-
-### 2. Mode Terminal Interaktif (`/shell`)
-Ketik `/shell` di Telegram untuk mengaktifkan **Mode Terminal Interaktif**:
-* Setelah aktif, **setiap teks** yang kamu ketik di Telegram akan dianggap sebagai perintah terminal dan langsung dieksekusi di VPS!
-* Ketik `/shell` kembali atau `/exit` untuk mematikan mode ini.
-
-### 3. Perintah Monitoring & System
-* `/logs` atau `/logs 15` — Menampilkan riwayat log notifikasi VPS.
-* `/status` — Menampilkan penggunaan RAM, Disk, Uptime & Waktu VPS.
-* `/ping` — Mengecek status keaktifan VPS.
-
-🔒 *Keamanan: Bot dikunci secara ketat dan HANYA akan merespon perintah yang dikirim oleh Chat ID milik kamu (Owner Chat ID).*
+```text
+tele-sysadmin/
+├── .env.example                # Template variabel lingkungan
+├── .gitignore                  # Filter git tingkat produksi
+├── README.md                   # Dokumentasi publik berstandar industri
+├── install.sh                  # Script installer otomatis 1-klik
+│
+├── config/                     # Modul Konfigurasi Sistem
+│   ├── __init__.py
+│   └── settings.py             # Loader kredensial .env & validasi variabel
+│
+├── core/                       # Inti Mesin Bot & System Drivers
+│   ├── __init__.py
+│   ├── logger.py               # Logging terstruktur & rotator log
+│   ├── security.py             # Verifikasi Owner Chat ID & Rate Limiter
+│   └── executor.py             # Subprocess Bash & Shell execution engine
+│
+├── modules/                    # Fitur-Fitur Utama (Desain Modular Berbasis Komponen)
+│   ├── __init__.py
+│   ├── notifier.py             # Engine CLI & API Notifikasi Kustom
+│   ├── terminal.py             # Remote Shell, /cmd, Mode /shell, & /tab Autocomplete
+│   ├── file_editor.py          # Remote File Editor (/read, /write, /append, /get, /upload)
+│   ├── system_monitor.py       # Monitor Performa (/status, /ping, RAM, CPU, Disk)
+│   ├── service_manager.py      # Manajemen Service (/services, systemctl restart/status)
+│   ├── docker_manager.py       # Manajemen Docker (/docker ps, restart, logs)
+│   ├── process_manager.py      # Pemantau Proses & Pembunuh PID (/top, /kill)
+│   ├── graph_generator.py      # Generator Grafik Matplotlib (/chart RAM/CPU)
+│   ├── backup_manager.py       # Manajemen Backup Database & Folder (/backup)
+│   └── security_alerts.py      # Watcher SSH Login & Firewall Fail2ban
+│
+├── services/                   # Template Systemd Unit
+│   ├── tele-sysadmin-boot.service   # Service notifikasi boot otomatis
+│   └── tele-sysadmin-daemon.service # Service daemon bot interaktif
+│
+└── bin/                        # CLI Executable Entrypoints
+    ├── notify-tele             # CLI pengirim notifikasi
+    └── tele-sysadmin-daemon   # Entrypoint daemon bot
+```
 
 ---
 
-## 🚀 Cara Setup di VPS Baru (Migration / Clean Install)
+## ⚡ Fitur-Fitur Utama
 
-Jika kamu berpindah ke VPS baru, cukup clone repo ini ke VPS baru, lalu jalankan:
+### 1. 🎛️ Remote VPS Terminal & Autocomplete
+* `/cmd <perintah>` — Eksekusi perintah bash jarak jauh.
+* `/shell` — **Mode Terminal Interaktif**: Ketik perintah langsung di chat tanpa `/cmd`, dilengkapi panel keyboard interaktif di bawah chat.
+* `/tab <query>` — Autocomplete file & folder seperti tombol Tab di Linux.
+* `/cd <folder>` & `/pwd` — Pindah & cek lokasi direktori kerja.
 
+### 2. ✏️ Remote File Editor & Document Transfer
+* `/read <file>` — Baca isi file teks langsung di chat.
+* `/write <file>` + Isi — Tulis/overwrite file teks.
+* `/append <file>` + Teks — Tambahkan baris di akhir file.
+* `/get <file>` — Unduh file VPS sebagai dokumen Telegram.
+* **Upload File**: Upload file dokumen dari HP/Laptop ke bot dengan caption path tujuan untuk simpan/overwrite file di VPS.
+
+### 3. 📊 System & Service Management
+* `/status` — Metrik performa (RAM, Disk, Uptime, Time).
+* `/chart` — Foto grafik tren penggunaan RAM (Matplotlib 2D).
+* `/services` — Cek & restart service systemctl (Nginx, Docker, SSH, MySQL, dll).
+* `/docker` — Cek status container, restart, dan baca logs Docker.
+* `/top` & `/kill <PID>` — Cek 10 proses teratas pemakai RAM & hentikan PID.
+* `/ufw` & `/fail2ban` — Cek status firewall & keamanan Fail2ban.
+* `/backup` — Buat archive backup database/folder otomatis.
+
+---
+
+## 🚀 Cara Install & Migration (1-Klik)
+
+### 1. Clone & Install
 ```bash
-git clone git@github.com:fatahilah-mr/telegram-notifier.git
-cd telegram-notifier
+git clone git@github.com:fatahilah-mr/tele-sysadmin.git
+cd tele-sysadmin
 bash install.sh
 ```
 
-Kemudian hubungkan ke Telegram Bot kamu:
-
+### 2. Konfigurasi Token & Chat ID
+Edit file `.env` atau jalankan:
 ```bash
 notify-tele --set-config --token "BOT_TOKEN_KAMU" --chatid "CHAT_ID_KAMU"
 ```
 
-*(Konfigurasi Token & Chat ID tersimpan aman di `~/.telegram_config`)*
+---
+
+## 🛡️ Keamanan & Kepatuhan (Security)
+* **Owner Chat ID Verification**: Mengunci respon bot hanya untuk Chat ID milik pemilik server.
+* **Rate Limiter**: Mencegah request spamming ke Telegram API.
+* **Sensitive File Exclusion**: File `.env` & `.telegram_config` di-ignore secara otomatis dari Git.
 
 ---
 
-## ⚡ Detail Spesifikasi Teknis
-* **Bahasa**: Python 3 (standard library).
-* **Daemon RAM Usage**: Hanya **~1.5 MB - 3 MB** saja.
-* **Security**: Strict Owner Chat ID Verification.
+## 📄 Lisensi
+MIT License © 2026 tele-sysadmin

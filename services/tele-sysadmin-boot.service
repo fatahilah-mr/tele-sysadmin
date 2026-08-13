@@ -1,0 +1,13 @@
+[Unit]
+Description=tele-sysadmin Boot Notification Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/notify-tele server "Server Booted" "VPS Debian telah selesai booting dan jaringan online."
+User=root
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

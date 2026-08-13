@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+# Ensure repository directory is in python path
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if not os.path.exists(os.path.join(REPO_DIR, "config")):
+    REPO_DIR = "/root/tele-sysadmin"
+if REPO_DIR not in sys.path:
+    sys.path.insert(0, REPO_DIR)
+
+import argparse
+from config.settings import load_config, save_config
+from core.logger import show_logs
+from modules.notifier import send_notification
+
+def main():
+    parser = argparse.ArgumentParser(description="tele-sysadmin CLI notification tool.")
+    parser.add_argument("type", nargs="?", default="info", help="Type/Category of notification (success, error, warning, info, task, deploy, backup, cron, security, db, or ANY custom category name)")
+    parser.add_argument("title", nargs="?", default="Notifikasi Baru", help="Title of the notification")
+    parser.add_argument("message", nargs="?", default="", help="Detailed message body")
+    parser.add_argument("--set-config", action="store_true", help="Set BOT_TOKEN and CHAT_ID in .env file")
+    parser.add_argument("--token", help="Telegram Bot Token")
+    parser.add_argument("--chatid", help="Telegram Chat ID")
+    parser.add_argument("--emoji", help="Custom emoji icon to override default")
+    parser.add_argument("--logs", "-l", nargs="?", const=20, type=int, help="Show recent notification logs (default: 20 entries)")
+
+    args = parser.parse_args()
+
+    if args.logs is not None:
+        print(show_logs(args.logs))
+        return
+
+    if args.set_config:
+        token = args.token or input("Enter Telegram Bot Token: ")
+        chatid = args.chatid or input("Enter Telegram Chat ID: ")
+        save_config(token, chatid)
+        return
+
+    bot_token, chat_id = load_config()
+
+    if args.token:
+        bot_token = args.token
+    if args.chatid:
+        chat_id = args.chatid
+
+    if not bot_token or not chat_id:
+        print("Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing!", file=sys.stderr)
+        print("Run `notify-tele --set-config --token YOUR_TOKEN --chatid YOUR_CHAT_ID` or create a `.env` file.", file=sys.stderr)
+        sys.exit(1)
+
+    send_notification(args.type, args.title, args.message, bot_token, chat_id, custom_emoji=args.emoji)
+
+if __name__ == "__main__":
+    main()
