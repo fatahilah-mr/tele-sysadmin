@@ -1,10 +1,53 @@
-# Ignore sensitive configs & environment secrets
+# ==========================================
+# Production-Grade .gitignore for tele-sysadmin
+# ==========================================
+
+# Secrets & Credentials (CRITICAL - DO NOT LEAK)
 .env
 *.env
 .telegram_config
+*.pem
+*.key
+*.crt
+
+# Explicitly keep the public configuration template
+!.env.example
+
+# Logs & Temporary Data
+*.log
+/tmp/
+*.tmp
+*.png
+*.jpg
+*.jpeg
+
+# Archive & Backup Files
+*.tar.gz
+*.tar
+*.gz
+*.zip
+backups/
+
+# Python Cache & Bytecode
 __pycache__/
 *.pyc
-.DS_Store
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Explicitly track .env.example template
-!.env.example
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE & System Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
