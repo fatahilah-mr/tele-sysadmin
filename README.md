@@ -6,6 +6,9 @@
 ![RAM Footprint](https://img.shields.io/badge/RAM-1.5_MB-brightgreen?style=for-the-badge)
 ![Status](https://img.shields.io/badge/status-production--ready-blue?style=for-the-badge)
 
+> 🌐 **Available Languages / Pilihan Bahasa:**  
+> 📖 **[Read in English](english/README.md)** | 🇮🇩 **[Baca dalam Bahasa Indonesia](README.md)**
+
 **tele-sysadmin** adalah suite manajemen server Linux/VPS tingkat produksi (*Production-Grade*) melalui Telegram Bot. 
 
 Dirancang secara **Modular Clean Architecture**, berbobot super ringan (RAM Daemon **~1.5 MB**), tanpa dependensi eksternal yang membengkak, serta mengintegrasikan pemantauan performa visual 2D, remote terminal interaktif, editor file jarak jauh, kontrol Docker/Systemd, dan CLI pengirim notifikasi kustom.

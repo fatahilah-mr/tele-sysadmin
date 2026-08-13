@@ -6,6 +6,9 @@
 ![RAM Footprint](https://img.shields.io/badge/RAM-1.5_MB-brightgreen?style=for-the-badge)
 ![Status](https://img.shields.io/badge/status-production--ready-blue?style=for-the-badge)
 
+> 🌐 **Available Languages / Pilihan Bahasa:**  
+> 📖 **[Read in English](README.md)** | 🇮🇩 **[Baca dalam Bahasa Indonesia](../README.md)**
+
 **tele-sysadmin** is a production-grade Linux VPS server management suite via Telegram Bot. 
 
 Built with a **Modular Clean Architecture**, super lightweight footprint (Daemon RAM usage **~1.5 MB**), zero bloated external dependencies, visual 2D performance tracking, interactive remote terminal, remote file editor, Docker/Systemd management, and customizable CLI notification engine.
