@@ -1,11 +1,12 @@
-chart - Foto grafik tren memori RAM (24 jam)
+status - Status RAM, Disk & Uptime VPS
+chart - Foto grafik tren performa RAM/CPU (24 jam)
 services - Status & kelola service systemctl
 docker - Status & kelola container Docker
 top - Top 10 proses pemakai RAM terbesar
-status - Cek RAM, Disk, Uptime VPS
-cmd - Jalankan perintah bash terminal
+kill - Hentikan proses PID tertentu
+cmd - Eksekusi perintah bash terminal jarak jauh
 shell - Toggle Mode Terminal Interaktif & Keyboard
-tab - Autocomplete file & folder (tombol Tab)
+tab - Autocomplete file & folder path (tombol Tab)
 read - Baca isi file teks di VPS
 write - Tulis / overwrite isi file teks
 get - Download file VPS sebagai dokumen
