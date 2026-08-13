@@ -2,24 +2,26 @@
 
 Dokumentasi dan tool sederhana untuk mengirimkan **notifikasi kustom berdasarkan jenis/kategori** dari VPS langsung ke Telegram Bot kamu.
 
-Tool ini sangat ringan (idle RAM 0 MB), berbasis Python standard library, dan dirancang agar mudah dipicu oleh pengguna (User) maupun AI Coding Assistant (Antigravity).
+Tool ini sangat ringan (idle RAM 0 MB), berbasis Python standard library, mendukung **pencatatan log otomatis**, dan dirancang agar mudah dipicu oleh pengguna (User) maupun AI Coding Assistant (Antigravity).
 
 ---
 
 ## 📂 Isi Folder
 
 * `notify-tele` : Script utama (Python 3 executable).
-* `install.sh` : Script installer otomatis untuk menyalin `notify-tele` ke `/usr/local/bin/`.
+* `install.sh` : Script installer otomatis untuk menyalin `notify-tele` ke `/usr/local/bin/` & mendaftarkan boot service.
+* `telegram-boot-notify.service` : Systemd unit file untuk notifikasi otomatis saat VPS booting/reboot.
 * `README.md` : Dokumentasi lengkap ini.
 
 ---
 
 ## 🚀 Cara Setup di VPS Baru (Migration / Clean Install)
 
-Jika kamu berpindah ke VPS baru, cukup copy folder `/root/telegram-notifier` ini ke VPS baru, lalu jalankan:
+Jika kamu berpindah ke VPS baru, cukup clone repo ini ke VPS baru, lalu jalankan:
 
 ```bash
-cd /root/telegram-notifier
+git clone git@github.com:fatahilah-mr/telegram-notifier.git
+cd telegram-notifier
 bash install.sh
 ```
 
@@ -69,6 +71,21 @@ notify-tele gajian "Bonus Masuk" "Transfer sebesar Rp 5.000.000" --emoji "💰"
 
 ---
 
+## 📜 Fitur Log & History Notifikasi
+
+Setiap notifikasi yang terkirim (maupun yang gagal) secara otomatis dicatat ke file log sistem di `/var/log/telegram-notifier.log`.
+
+### Melihat Log Notifikasi via Terminal:
+```bash
+# Lihat 20 log notifikasi terakhir
+notify-tele --logs
+
+# Atau singkatannya (-l 10 untuk melihat 10 log terakhir):
+notify-tele -l 10
+```
+
+---
+
 ## 🤖 Penggunaan Oleh AI Agent (Antigravity)
 
 Setiap kali kamu meminta AI Agent untuk mengerjakan tugas di VPS dan ingin mendapat notifikasi saat selesai, kamu tinggal bilang:
@@ -81,5 +98,5 @@ AI Agent akan otomatis mengeksekusi perintah CLI `notify-tele` di latar belakang
 
 ## ⚡ Detail Spesifikasi Teknis
 * **Bahasa**: Python 3 (menggunakan modul bawaan `urllib.request` & `json`, tanpa perlu install `pip`).
-* **Penggunaan Memori**: Idle 0 MB. Saat dipicu hanya ~10 MB selama 0.2 detik.
-* **Format Pesan**: HTML Telegram Parse Mode.
+* **Log Location**: `/var/log/telegram-notifier.log`
+* **Auto-Boot Service**: Enabled via `/etc/systemd/system/telegram-boot-notify.service`

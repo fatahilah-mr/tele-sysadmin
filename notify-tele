@@ -9,6 +9,8 @@ import json
 from datetime import datetime
 
 CONFIG_PATH = os.path.expanduser("~/.telegram_config")
+PRIMARY_LOG_PATH = "/var/log/telegram-notifier.log"
+FALLBACK_LOG_PATH = os.path.expanduser("~/.telegram_notifier.log")
 
 # Predefined categories with emojis and headers
 CATEGORIES = {
@@ -32,6 +34,49 @@ CATEGORIES = {
     "test":     {"emoji": "🧪", "header": "TEST RESULT"},
     "bot":      {"emoji": "🤖", "header": "BOT ACTION"},
 }
+
+def get_log_file():
+    try:
+        # Test if writable to primary
+        with open(PRIMARY_LOG_PATH, "a") as f:
+            pass
+        return PRIMARY_LOG_PATH
+    except Exception:
+        return FALLBACK_LOG_PATH
+
+def write_log(status, category, title, message="", error_detail=""):
+    log_path = get_log_file()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    clean_msg = message.replace("\n", " ") if message else ""
+    
+    log_line = f"[{now}] [{status}] [{category.upper()}] {title}"
+    if clean_msg:
+        log_line += f" | Msg: {clean_msg}"
+    if error_detail:
+        log_line += f" | Error: {error_detail}"
+    log_line += "\n"
+
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(log_line)
+    except Exception as e:
+        print(f"Warning: Could not write to log file: {e}", file=sys.stderr)
+
+def show_logs(lines=20):
+    log_path = get_log_file()
+    if not os.path.exists(log_path):
+        print(f"No log file found at {log_path} yet.")
+        return
+
+    print(f"=== Telegram Notifier History ({log_path}) ===")
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            all_lines = f.readlines()
+            recent = all_lines[-lines:] if len(all_lines) > lines else all_lines
+            for line in recent:
+                print(line.rstrip())
+    except Exception as e:
+        print(f"Error reading log file: {e}", file=sys.stderr)
 
 def load_config():
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -94,9 +139,12 @@ def send_telegram_notification(category, title, message, bot_token, chat_id, cus
             res_data = json.loads(response.read().decode("utf-8"))
             if res_data.get("ok"):
                 print("Notification sent successfully!")
+                write_log("SENT", category, title, message)
                 return True
             else:
-                print(f"Failed to send notification: {res_data}", file=sys.stderr)
+                err_msg = str(res_data)
+                print(f"Failed to send notification: {err_msg}", file=sys.stderr)
+                write_log("FAILED", category, title, message, error_detail=err_msg)
                 return False
     except urllib.error.HTTPError as e:
         err_body = e.fp.read().decode("utf-8") if e.fp else ""
@@ -109,9 +157,12 @@ def send_telegram_notification(category, title, message, bot_token, chat_id, cus
         print(f"Telegram API Error ({e.code}): {desc}", file=sys.stderr)
         if "chat not found" in desc.lower():
             print("💡 TIP: Buka bot kamu di aplikasi Telegram dan tekan tombol START / kirim 1 pesan ke bot agar bot diizinkan mengirim pesan ke kamu.", file=sys.stderr)
+        
+        write_log("FAILED", category, title, message, error_detail=f"HTTP {e.code}: {desc}")
         return False
     except Exception as e:
         print(f"Error sending notification: {e}", file=sys.stderr)
+        write_log("FAILED", category, title, message, error_detail=str(e))
         return False
 
 def main():
@@ -123,8 +174,13 @@ def main():
     parser.add_argument("--token", help="Telegram Bot Token")
     parser.add_argument("--chatid", help="Telegram Chat ID")
     parser.add_argument("--emoji", help="Custom emoji icon to override default")
+    parser.add_argument("--logs", "-l", nargs="?", const=20, type=int, help="Show recent notification logs (default: 20 entries)")
 
     args = parser.parse_args()
+
+    if args.logs is not None:
+        show_logs(args.logs)
+        return
 
     if args.set_config:
         token = args.token or input("Enter Telegram Bot Token: ")
