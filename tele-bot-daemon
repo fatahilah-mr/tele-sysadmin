@@ -7,6 +7,7 @@ import urllib.request
 import urllib.parse
 import json
 import re
+import glob
 from datetime import datetime
 
 CONFIG_PATH = os.path.expanduser("~/.telegram_config")
@@ -44,7 +45,7 @@ def load_config():
 
     return bot_token, chat_id
 
-def send_message(bot_token, chat_id, text):
+def send_message(bot_token, chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
         "chat_id": chat_id,
@@ -52,6 +53,9 @@ def send_message(bot_token, chat_id, text):
         "parse_mode": "HTML",
         "disable_web_page_preview": True
     }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     try:
@@ -65,13 +69,11 @@ def send_chunked_output(bot_token, chat_id, header, output_text):
     clean = strip_ansi(output_text)
     escaped = escape_html(clean)
     
-    # Telegram max message length is 4096
     max_len = 3800
     if len(escaped) <= max_len:
         msg = f"{header}\n<pre><code>{escaped}</code></pre>"
         send_message(bot_token, chat_id, msg)
     else:
-        # Split into chunks
         chunks = [escaped[i:i+max_len] for i in range(0, len(escaped), max_len)]
         send_message(bot_token, chat_id, f"{header} (Part 1/{len(chunks)}):")
         for idx, chunk in enumerate(chunks):
@@ -122,18 +124,44 @@ def get_system_status():
     except Exception as e:
         return f"Gagal mengambil status VPS: {e}"
 
+def autocomplete_path(query):
+    query = query.strip()
+    if not query:
+        search_pattern = os.path.join(session_cwd, "*")
+    elif query.startswith("/"):
+        search_pattern = query + "*"
+    else:
+        search_pattern = os.path.join(session_cwd, query + "*")
+
+    matches = glob.glob(search_pattern)
+    matches.sort()
+    
+    if not matches:
+        return "<i>Tidak ada file/folder yang cocok.</i>"
+
+    output = f"<b>💡 Autocomplete / Suggestions ({len(matches)} hasil):</b>\n\n"
+    for m in matches[:15]:  # limit to top 15
+        is_dir = os.path.isdir(m)
+        icon = "📁" if is_dir else "📄"
+        rel_name = os.path.relpath(m, session_cwd) if m.startswith(session_cwd) else m
+        if is_dir:
+            cmd = f"cd {rel_name}"
+            output += f"{icon} <code>{escape_html(rel_name)}/</code> ➔ Tap: <code>{escape_html(cmd)}</code>\n"
+        else:
+            cmd = f"cat {rel_name}"
+            output += f"{icon} <code>{escape_html(rel_name)}</code> ➔ Tap: <code>{escape_html(cmd)}</code>\n"
+    return output
+
 def execute_bash_command(cmd_str):
     global session_cwd
     
     cmd_str = cmd_str.strip()
     
-    # Handle 'cd' commands explicitly
     if cmd_str.startswith("cd ") or cmd_str == "cd":
         target = cmd_str[3:].strip() if len(cmd_str) > 2 else os.path.expanduser("~")
         if not target:
             target = os.path.expanduser("~")
         
-        # Handle relative or absolute path
         new_dir = os.path.abspath(os.path.join(session_cwd, target))
         if os.path.exists(new_dir) and os.path.isdir(new_dir):
             session_cwd = new_dir
@@ -160,6 +188,17 @@ def execute_bash_command(cmd_str):
     except Exception as e:
         return False, f"Execution error: {e}"
 
+def get_shell_keyboard():
+    return {
+        "keyboard": [
+            [{"text": "ls -la"}, {"text": "pwd"}, {"text": "uptime"}],
+            [{"text": "df -h"}, {"text": "free -h"}, {"text": "/tab"}],
+            [{"text": "/status"}, {"text": "/logs"}, {"text": "/exit"}]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
+    }
+
 def handle_command(text, bot_token, chat_id):
     global shell_mode, session_cwd
     
@@ -171,17 +210,20 @@ def handle_command(text, bot_token, chat_id):
         shell_status = "🟢 AKTIF" if shell_mode else "🔴 NON-AKTIF"
         help_text = (
             "<b>🤖 Remote VPS Terminal Bot</b>\n\n"
-            "<b>📌 Command Terminal:</b>\n"
-            "• <code>/cmd &lt;command&gt;</code> — Jalankan perintah terminal (misal: <code>/cmd ls -la</code>)\n"
-            "• <code>/shell</code> — Mode Terminal Interaktif (Ketik perintah langsung tanpa <code>/cmd</code>)\n"
-
-            "• <code>/cd &lt;folder&gt;</code> — Pindah direktori kerja (saat ini: <code>" + session_cwd + "</code>)\n"
-            "• <code>/pwd</code> — Tampilkan direktori saat ini\n\n"
-            "<b>📊 Monitoring & Log:</b>\n"
+            "<b>📌 Bantuan Autocomplete / Suggestion:</b>\n"
+            "1. <b>Ketik <code>/</code> di chat:</b> Telegram akan otomatis menampilkan daftar popup command lengkap.\n"
+            "2. <b>Mode <code>/shell</code>:</b> Menampilkan tombol keyboard interaktif di layar HP/Desktop kamu.\n"
+            "3. <b>Perintah <code>/tab [nama]</code>:</b> Autocomplete file & folder seperti tombol Tab di terminal!\n\n"
+            "<b>📌 Command Utama:</b>\n"
+            "• <code>/cmd &lt;command&gt;</code> — Jalankan perintah terminal\n"
+            "• <code>/shell</code> — Mode Terminal Interaktif & Tombol Keyboard\n"
+            "• <code>/tab &lt;query&gt;</code> — Autocomplete nama file/folder di CWD\n"
+            "• <code>/cd &lt;folder&gt;</code> — Pindah direktori kerja\n"
+            "• <code>/pwd</code> — Tampilkan direktori saat ini\n"
             "• <code>/logs</code> — Lihat log notifikasi VPS\n"
             "• <code>/status</code> — Cek RAM, Disk, Uptime VPS\n"
             "• <code>/ping</code> — Tes koneksi VPS\n\n"
-            f"<i>Mode Shell: {shell_status}</i>"
+            f"<i>Mode Shell: {shell_status} | CWD: {session_cwd}</i>"
         )
         send_message(bot_token, chat_id, help_text)
 
@@ -190,17 +232,25 @@ def handle_command(text, bot_token, chat_id):
         if shell_mode:
             msg = (
                 "<b>🐚 MODE TERMINAL INTERAKTIF: AKTIF</b>\n\n"
-                f"📂 <b>Direktori:</b> <code>{session_cwd}</code>\n"
-                "Ketik perintah terminal apa saja secara langsung di chat ini untuk mengeksekusinya di VPS.\n"
-                "Ketik <code>/shell</code> atau <code>/exit</code> untuk mematikan mode ini."
+                f"📂 <b>Direktori:</b> <code>{session_cwd}</code>\n\n"
+                "• Ketik perintah terminal apa saja di chat ini.\n"
+                "• Gunakan <b>Tombol Keyboard di bawah</b> untuk perintah cepat!\n"
+                "• Ketik <code>/tab</code> untuk autocomplete file/folder.\n"
+                "• Ketik <code>/exit</code> untuk mematikan mode ini."
             )
+            send_message(bot_token, chat_id, msg, reply_markup=get_shell_keyboard())
         else:
             msg = "<b>🔴 MODE TERMINAL INTERAKTIF: NON-AKTIF</b>\nSistem kembali ke mode normal."
-        send_message(bot_token, chat_id, msg)
+            send_message(bot_token, chat_id, msg, reply_markup={"remove_keyboard": True})
 
     elif first_word in ["/exit", "exit"] and shell_mode:
         shell_mode = False
-        send_message(bot_token, chat_id, "<b>🔴 MODE TERMINAL INTERAKTIF: NON-AKTIF</b>")
+        send_message(bot_token, chat_id, "<b>🔴 MODE TERMINAL INTERAKTIF: NON-AKTIF</b>", reply_markup={"remove_keyboard": True})
+
+    elif first_word in ["/tab", "tab"]:
+        query = text[len(parts[0]):].strip() if len(parts) > 1 else ""
+        sug_text = autocomplete_path(query)
+        send_message(bot_token, chat_id, sug_text)
 
     elif first_word in ["/cmd", "/sh", "/exec"]:
         if len(parts) < 2:
@@ -236,7 +286,6 @@ def handle_command(text, bot_token, chat_id):
         send_message(bot_token, chat_id, "<b>Pong! ⚡</b>\nVPS Debian kamu aktif & berjalan normal.")
 
     else:
-        # If shell mode is active, treat any text as bash command
         if shell_mode:
             header = f"<b>🐚 Executing:</b> <code>{escape_html(text)}</code>\n📂 <b>CWD:</b> <code>{escape_html(session_cwd)}</code>"
             success, out = execute_bash_command(text)
@@ -267,7 +316,6 @@ def main():
                         from_id = str(message.get("from", {}).get("id", ""))
                         text = message.get("text", "")
 
-                        # Security check: strictly enforce owner Chat ID
                         if from_id == str(owner_chat_id) and text:
                             print(f"Received from owner ({from_id}): {text}")
                             handle_command(text, bot_token, owner_chat_id)
