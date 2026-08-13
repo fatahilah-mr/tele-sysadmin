@@ -1,5 +1,6 @@
 # 🤖 tele-sysadmin — Master Telegram VPS Server Management Suite
 
+[![Read in English](https://img.shields.io/badge/Language-English-blue?style=for-the-badge&logo=google-translate)](english/README.md)
 ![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?style=for-the-badge&logo=python)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 ![RAM Footprint](https://img.shields.io/badge/RAM-1.5_MB-brightgreen?style=for-the-badge)
