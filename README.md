@@ -43,7 +43,7 @@ Ketik `/shell` di Telegram untuk mengaktifkan **Mode Terminal Interaktif**:
 * `/status` — Menampilkan penggunaan RAM, Disk, Uptime & Waktu VPS.
 * `/ping` — Mengecek status keaktifan VPS.
 
-🔒 *Keamanan: Bot dikunci secara ketat dan HANYA akan merespon perintah yang dikirim oleh Chat ID milik kamu (`5743328578`).*
+🔒 *Keamanan: Bot dikunci secara ketat dan HANYA akan merespon perintah yang dikirim oleh Chat ID milik kamu (Owner Chat ID).*
 
 ---
 
