@@ -65,6 +65,84 @@ def send_message(bot_token, chat_id, text, reply_markup=None):
         print(f"Error sending message: {e}", file=sys.stderr)
         return None
 
+def send_document(bot_token, chat_id, file_path, caption=""):
+    url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+    if not os.path.exists(file_path):
+        send_message(bot_token, chat_id, f"❌ File tidak ditemukan: <code>{file_path}</code>")
+        return False
+
+    boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+    filename = os.path.basename(file_path)
+
+    try:
+        with open(file_path, "rb") as f:
+            file_content = f.read()
+
+        body = []
+        body.append(f"--{boundary}".encode("utf-8"))
+        body.append(f'Content-Disposition: form-data; name="chat_id"'.encode("utf-8"))
+        body.append(b"")
+        body.append(str(chat_id).encode("utf-8"))
+
+        if caption:
+            body.append(f"--{boundary}".encode("utf-8"))
+            body.append(f'Content-Disposition: form-data; name="caption"'.encode("utf-8"))
+            body.append(b"")
+            body.append(caption.encode("utf-8"))
+
+        body.append(f"--{boundary}".encode("utf-8"))
+        body.append(f'Content-Disposition: form-data; name="document"; filename="{filename}"'.encode("utf-8"))
+        body.append(b"Content-Type: application/octet-stream")
+        body.append(b"")
+        body.append(file_content)
+
+        body.append(f"--{boundary}--".encode("utf-8"))
+        body.append(b"")
+
+        payload = b"\r\n".join(body)
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        )
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            res = json.loads(response.read().decode("utf-8"))
+            return res.get("ok", False)
+    except Exception as e:
+        send_message(bot_token, chat_id, f"❌ Gagal mengirim dokumen: {e}")
+        return False
+
+def download_telegram_file(bot_token, file_id, save_destination):
+    try:
+        # 1. Get file path from Telegram API
+        get_file_url = f"https://api.telegram.org/bot{bot_token}/getFile?file_id={file_id}"
+        req = urllib.request.Request(get_file_url)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res = json.loads(response.read().decode("utf-8"))
+            if not res.get("ok"):
+                return False, f"Telegram API error: {res}"
+            tele_file_path = res["result"]["file_path"]
+
+        # 2. Download file content
+        download_url = f"https://api.telegram.org/file/bot{bot_token}/{tele_file_path}"
+        req_dl = urllib.request.Request(download_url)
+        with urllib.request.urlopen(req_dl, timeout=30) as dl_resp:
+            content = dl_resp.read()
+
+        # 3. Ensure target parent directory exists and write
+        parent_dir = os.path.dirname(save_destination)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
+
+        with open(save_destination, "wb") as f:
+            f.write(content)
+
+        return True, f"File berhasil disimpan ke <code>{save_destination}</code> ({len(content)} bytes)."
+    except Exception as e:
+        return False, f"Gagal mengunduh file: {e}"
+
 def send_chunked_output(bot_token, chat_id, header, output_text):
     clean = strip_ansi(output_text)
     escaped = escape_html(clean)
@@ -140,7 +218,7 @@ def autocomplete_path(query):
         return "<i>Tidak ada file/folder yang cocok.</i>"
 
     output = f"<b>💡 Autocomplete / Suggestions ({len(matches)} hasil):</b>\n\n"
-    for m in matches[:15]:  # limit to top 15
+    for m in matches[:15]:
         is_dir = os.path.isdir(m)
         icon = "📁" if is_dir else "📄"
         rel_name = os.path.relpath(m, session_cwd) if m.startswith(session_cwd) else m
@@ -149,7 +227,7 @@ def autocomplete_path(query):
             output += f"{icon} <code>{escape_html(rel_name)}/</code> ➔ Tap: <code>{escape_html(cmd)}</code>\n"
         else:
             cmd = f"cat {rel_name}"
-            output += f"{icon} <code>{escape_html(rel_name)}</code> ➔ Tap: <code>{escape_html(cmd)}</code>\n"
+            output += f"{icon} <code>{escape_html(rel_name)}</code> ➔ Tap: <code>/read {escape_html(rel_name)}</code>\n"
     return output
 
 def execute_bash_command(cmd_str):
@@ -199,9 +277,120 @@ def get_shell_keyboard():
         "is_persistent": True
     }
 
-def handle_command(text, bot_token, chat_id):
+def handle_file_editor_command(text, bot_token, chat_id):
+    global session_cwd
+
+    text = text.strip()
+    parts = text.split()
+    cmd = parts[0].lower()
+
+    if cmd in ["/read", "/cat"]:
+        if len(parts) < 2:
+            send_message(bot_token, chat_id, "Gunakan: <code>/read &lt;filepath&gt;</code>\nContoh: <code>/read /root/telegram-notifier/README.md</code>")
+            return
+        
+        filepath = text[len(parts[0]):].strip()
+        abs_path = os.path.abspath(os.path.join(session_cwd, filepath))
+
+        if not os.path.exists(abs_path):
+            send_message(bot_token, chat_id, f"❌ File tidak ditemukan: <code>{abs_path}</code>")
+            return
+
+        if os.path.isdir(abs_path):
+            send_message(bot_token, chat_id, f"❌ Path ini adalah direktori/folder, gunakan <code>cd {filepath}</code> atau <code>/tab {filepath}</code>.")
+            return
+
+        size = os.path.getsize(abs_path)
+        if size > 100000: # > 100 KB
+            send_message(bot_token, chat_id, f"📄 File cukup besar ({size/1024:.1f} KB), mengunduh sebagai dokumen...")
+            send_document(bot_token, chat_id, abs_path, caption=f"📄 {os.path.basename(abs_path)}")
+            return
+
+        try:
+            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            header = f"<b>📄 Reading File:</b> <code>{escape_html(abs_path)}</code> ({size} bytes)"
+            send_chunked_output(bot_token, chat_id, header, content)
+        except Exception as e:
+            send_message(bot_token, chat_id, f"❌ Gagal membaca file: {e}")
+
+    elif cmd == "/get" or cmd == "/download":
+        if len(parts) < 2:
+            send_message(bot_token, chat_id, "Gunakan: <code>/get &lt;filepath&gt;</code>\nContoh: <code>/get /root/telegram-notifier/README.md</code>")
+            return
+
+        filepath = text[len(parts[0]):].strip()
+        abs_path = os.path.abspath(os.path.join(session_cwd, filepath))
+        send_document(bot_token, chat_id, abs_path, caption=f"📄 {os.path.basename(abs_path)} | Path: {abs_path}")
+
+    elif cmd == "/write":
+        # Format: /write filepath
+        # newline
+        # content...
+        lines = text.split("\n", 1)
+        first_line = lines[0].strip().split()
+        if len(first_line) < 2:
+            send_message(bot_token, chat_id, "<b>Format Write File:</b>\n<code>/write &lt;filepath&gt;\n[isi file baru...]</code>\n\nAtau kirim/upload file dokumen ke bot ini dengan caption <code>/upload &lt;filepath&gt;</code>.")
+            return
+
+        filepath = first_line[1].strip()
+        content = lines[1] if len(lines) > 1 else ""
+        abs_path = os.path.abspath(os.path.join(session_cwd, filepath))
+
+        try:
+            parent_dir = os.path.dirname(abs_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+                
+            with open(abs_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            send_message(bot_token, chat_id, f"✅ Berhasil menulis file ke <code>{abs_path}</code> ({len(content)} bytes).")
+        except Exception as e:
+            send_message(bot_token, chat_id, f"❌ Gagal menulis file: {e}")
+
+    elif cmd == "/append":
+        lines = text.split("\n", 1)
+        first_line = lines[0].strip().split()
+        if len(first_line) < 2:
+            send_message(bot_token, chat_id, "<b>Format Append File:</b>\n<code>/append &lt;filepath&gt;\n[baris teks tambahan...]</code>")
+            return
+
+        filepath = first_line[1].strip()
+        content = (lines[1] if len(lines) > 1 else "") + "\n"
+        abs_path = os.path.abspath(os.path.join(session_cwd, filepath))
+
+        try:
+            with open(abs_path, "a", encoding="utf-8") as f:
+                f.write(content)
+            send_message(bot_token, chat_id, f"✅ Berhasil menambahkan baris ke <code>{abs_path}</code>.")
+        except Exception as e:
+            send_message(bot_token, chat_id, f"❌ Gagal append ke file: {e}")
+
+def handle_command(text, bot_token, chat_id, document=None):
     global shell_mode, session_cwd
-    
+
+    # Handle document uploads first if document exists
+    if document:
+        file_id = document.get("file_id")
+        file_name = document.get("file_name", "uploaded_file.txt")
+        caption = (text or "").strip()
+
+        if caption.startswith("/upload "):
+            target_path = caption[8:].strip()
+        elif caption.startswith("/write "):
+            target_path = caption[7:].strip()
+        elif caption:
+            target_path = caption
+        else:
+            target_path = os.path.join(session_cwd, file_name)
+
+        abs_path = os.path.abspath(os.path.join(session_cwd, target_path))
+        send_message(bot_token, chat_id, f"📥 Mengunduh dan menyimpan file ke <code>{abs_path}</code>...")
+        success, msg = download_telegram_file(bot_token, file_id, abs_path)
+        icon = "✅" if success else "❌"
+        send_message(bot_token, chat_id, f"{icon} {msg}")
+        return
+
     text = text.strip()
     parts = text.split()
     first_word = parts[0].lower() if parts else ""
@@ -209,23 +398,29 @@ def handle_command(text, bot_token, chat_id):
     if first_word in ["/start", "/help"]:
         shell_status = "🟢 AKTIF" if shell_mode else "🔴 NON-AKTIF"
         help_text = (
-            "<b>🤖 Remote VPS Terminal Bot</b>\n\n"
-            "<b>📌 Bantuan Autocomplete / Suggestion:</b>\n"
-            "1. <b>Ketik <code>/</code> di chat:</b> Telegram akan otomatis menampilkan daftar popup command lengkap.\n"
-            "2. <b>Mode <code>/shell</code>:</b> Menampilkan tombol keyboard interaktif di layar HP/Desktop kamu.\n"
-            "3. <b>Perintah <code>/tab [nama]</code>:</b> Autocomplete file & folder seperti tombol Tab di terminal!\n\n"
-            "<b>📌 Command Utama:</b>\n"
+            "<b>🤖 Remote VPS Terminal & File Editor Bot</b>\n\n"
+            "<b>📌 File Editor & Management:</b>\n"
+            "• <code>/read &lt;file&gt;</code> — Baca/lihat isi file teks\n"
+            "• <code>/get &lt;file&gt;</code> — Download file VPS sebagai dokumen ke Telegram\n"
+            "• <code>/write &lt;file&gt;</code> + Newline + Isi file baru — Tulis/Overwrite file\n"
+            "• <code>/append &lt;file&gt;</code> + Newline + Tambahan — Tambahkan baris ke file\n"
+            "• <b>Upload File Dokumen:</b> Kirim file apa saja ke bot ini (isi caption dengan lokasi path tujuan) untuk overwrite file di VPS!\n\n"
+            "<b>📌 Terminal Command:</b>\n"
             "• <code>/cmd &lt;command&gt;</code> — Jalankan perintah terminal\n"
             "• <code>/shell</code> — Mode Terminal Interaktif & Tombol Keyboard\n"
-            "• <code>/tab &lt;query&gt;</code> — Autocomplete nama file/folder di CWD\n"
+            "• <code>/tab &lt;query&gt;</code> — Autocomplete file & folder\n"
             "• <code>/cd &lt;folder&gt;</code> — Pindah direktori kerja\n"
-            "• <code>/pwd</code> — Tampilkan direktori saat ini\n"
+            "• <code>/pwd</code> — Tampilkan direktori saat ini\n\n"
+            "<b>📊 Monitoring & Log:</b>\n"
             "• <code>/logs</code> — Lihat log notifikasi VPS\n"
             "• <code>/status</code> — Cek RAM, Disk, Uptime VPS\n"
             "• <code>/ping</code> — Tes koneksi VPS\n\n"
             f"<i>Mode Shell: {shell_status} | CWD: {session_cwd}</i>"
         )
         send_message(bot_token, chat_id, help_text)
+
+    elif first_word in ["/read", "/cat", "/get", "/download", "/write", "/append"]:
+        handle_file_editor_command(text, bot_token, chat_id)
 
     elif first_word == "/shell":
         shell_mode = not shell_mode
@@ -235,7 +430,7 @@ def handle_command(text, bot_token, chat_id):
                 f"📂 <b>Direktori:</b> <code>{session_cwd}</code>\n\n"
                 "• Ketik perintah terminal apa saja di chat ini.\n"
                 "• Gunakan <b>Tombol Keyboard di bawah</b> untuk perintah cepat!\n"
-                "• Ketik <code>/tab</code> untuk autocomplete file/folder.\n"
+                "• Gunakan <code>/read &lt;file&gt;</code> untuk baca file, atau <code>/get &lt;file&gt;</code> untuk download file.\n"
                 "• Ketik <code>/exit</code> untuk mematikan mode ini."
             )
             send_message(bot_token, chat_id, msg, reply_markup=get_shell_keyboard())
@@ -314,11 +509,13 @@ def main():
                         offset = update["update_id"] + 1
                         message = update.get("message", {})
                         from_id = str(message.get("from", {}).get("id", ""))
-                        text = message.get("text", "")
+                        text = message.get("text", "") or message.get("caption", "")
+                        document = message.get("document")
 
-                        if from_id == str(owner_chat_id) and text:
-                            print(f"Received from owner ({from_id}): {text}")
-                            handle_command(text, bot_token, owner_chat_id)
+                        if from_id == str(owner_chat_id):
+                            if text or document:
+                                print(f"Received from owner ({from_id}): text={text}, doc={document is not None}")
+                                handle_command(text, bot_token, owner_chat_id, document=document)
         except urllib.error.URLError:
             time.sleep(5)
         except Exception as e:
