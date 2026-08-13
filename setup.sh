@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# tele-sysadmin Interactive TUI Installer & Setup Wizard
+# tele-sysadmin Mobile-Responsive Interactive Installer
 # Location: /root/tele-sysadmin/setup.sh
 
 set -e
@@ -19,12 +19,28 @@ for arg in "$@"; do
     fi
 done
 
-# Fallback if TTY is not available
 if [ ! -t 0 ]; then
     NON_INTERACTIVE=true
 fi
 
-# Function to run installation steps
+# Calculate dynamic terminal bounds (Mobile Responsive)
+calc_dimensions() {
+    local raw_cols=$(tput cols 2>/dev/null || echo 45)
+    local raw_lines=$(tput lines 2>/dev/null || echo 20)
+
+    BOX_WIDTH=$(( raw_cols - 4 ))
+    if [ $BOX_WIDTH -gt 60 ]; then BOX_WIDTH=60; fi
+    if [ $BOX_WIDTH -lt 36 ]; then BOX_WIDTH=36; fi
+
+    BOX_HEIGHT=$(( raw_lines - 2 ))
+    if [ $BOX_HEIGHT -gt 20 ]; then BOX_HEIGHT=20; fi
+    if [ $BOX_HEIGHT -lt 12 ]; then BOX_HEIGHT=12; fi
+
+    MENU_HEIGHT=$(( BOX_HEIGHT - 7 ))
+    if [ $MENU_HEIGHT -lt 4 ]; then MENU_HEIGHT=4; fi
+}
+
+# Core installation logic
 run_install() {
     local install_deps=$1
     local install_cli=$2
@@ -33,14 +49,14 @@ run_install() {
     local setup_env=$5
     local setup_creds=$6
 
-    echo ""
+    clear 2>/dev/null || true
     echo "========================================="
-    echo "   Running tele-sysadmin Installation    "
+    echo "   tele-sysadmin Installation Running   "
     echo "========================================="
 
     # 1. Install Dependencies
     if [ "$install_deps" = true ]; then
-        echo "[1/5] Installing Python dependencies (psutil, matplotlib)..."
+        echo "[1/5] Installing Python dependencies..."
         if command -v pip3 >/dev/null 2>&1; then
             pip3 install --index-url https://pypi.org/simple --break-system-packages -r "$SCRIPT_DIR/requirements.txt" || true
         fi
@@ -48,13 +64,13 @@ run_install() {
 
     # 2. Install Executables
     if [ "$install_cli" = true ]; then
-        echo "[2/5] Installing CLI executable notify-tele..."
+        echo "[2/5] Installing CLI notify-tele..."
         cp "$SCRIPT_DIR/bin/notify-tele" "$NOTIFY_BIN"
         chmod +x "$NOTIFY_BIN"
     fi
 
     if [ "$install_daemon" = true ]; then
-        echo "[2/5] Installing Bot Daemon executable tele-sysadmin-daemon..."
+        echo "[2/5] Installing Bot Daemon tele-sysadmin-daemon..."
         cp "$SCRIPT_DIR/bin/tele-sysadmin-daemon" "$DAEMON_BIN"
         chmod +x "$DAEMON_BIN"
     fi
@@ -62,7 +78,7 @@ run_install() {
     # 3. Setup Boot Service
     if [ "$install_boot" = true ]; then
         if [ -f "$SCRIPT_DIR/services/tele-sysadmin-boot.service" ]; then
-            echo "[3/5] Setting up boot notification systemd service..."
+            echo "[3/5] Setting up boot notification service..."
             cp "$SCRIPT_DIR/services/tele-sysadmin-boot.service" "/etc/systemd/system/tele-sysadmin-boot.service"
             systemctl daemon-reload || true
             systemctl enable tele-sysadmin-boot.service || true
@@ -72,7 +88,7 @@ run_install() {
     # 4. Setup Daemon Service
     if [ "$install_daemon" = true ]; then
         if [ -f "$SCRIPT_DIR/services/tele-sysadmin-daemon.service" ]; then
-            echo "[4/5] Setting up master bot daemon systemd service..."
+            echo "[4/5] Setting up bot daemon service..."
             cp "$SCRIPT_DIR/services/tele-sysadmin-daemon.service" "/etc/systemd/system/telegram-bot-daemon.service" 2>/dev/null || true
             cp "$SCRIPT_DIR/services/tele-sysadmin-daemon.service" "/etc/systemd/system/tele-sysadmin-daemon.service"
             systemctl daemon-reload || true
@@ -89,7 +105,7 @@ run_install() {
         fi
     fi
 
-    # 6. Credentials Input
+    # 6. Credentials Setup
     if [ "$setup_creds" = true ] && [ "$NON_INTERACTIVE" = false ]; then
         echo ""
         echo "--- Configuration Setup ---"
@@ -102,12 +118,19 @@ run_install() {
         fi
 
         if command -v whiptail >/dev/null 2>&1; then
-            NEW_TOKEN=$(whiptail --title "Telegram Bot Token Setup" --inputbox "Masukkan Telegram Bot Token kamu (dari @BotFather):" 10 65 "$current_token" 3>&1 1>&2 2>&3 || echo "$current_token")
-            NEW_CHATID=$(whiptail --title "Telegram Chat ID Setup" --inputbox "Masukkan Telegram Chat ID kamu (dari @userinfobot):" 10 65 "$current_chatid" 3>&1 1>&2 2>&3 || echo "$current_chatid")
+            calc_dimensions
+            TMP_TOKEN=$(mktemp)
+            TMP_CHATID=$(mktemp)
+            whiptail --title "Bot Token Setup" --inputbox "Masukkan Bot Token dari @BotFather:" $BOX_HEIGHT $BOX_WIDTH "$current_token" 2> "$TMP_TOKEN" || echo "$current_token" > "$TMP_TOKEN"
+            whiptail --title "Chat ID Setup" --inputbox "Masukkan Chat ID dari @userinfobot:" $BOX_HEIGHT $BOX_WIDTH "$current_chatid" 2> "$TMP_CHATID" || echo "$current_chatid" > "$TMP_CHATID"
+            
+            NEW_TOKEN=$(cat "$TMP_TOKEN")
+            NEW_CHATID=$(cat "$TMP_CHATID")
+            rm -f "$TMP_TOKEN" "$TMP_CHATID"
         else
-            read -p "Masukkan Telegram Bot Token [$current_token]: " input_token
+            read -p "Bot Token [$current_token]: " input_token
             NEW_TOKEN=${input_token:-$current_token}
-            read -p "Masukkan Telegram Chat ID [$current_chatid]: " input_chatid
+            read -p "Chat ID [$current_chatid]: " input_chatid
             NEW_CHATID=${input_chatid:-$current_chatid}
         fi
 
@@ -118,7 +141,7 @@ TELEGRAM_BOT_TOKEN="$NEW_TOKEN"
 TELEGRAM_CHAT_ID="$NEW_CHATID"
 EOF
             chmod 600 "$ENV_FILE"
-            echo "✅ Kredensial tersimpan ke $ENV_FILE"
+            echo "✅ Kredensial tersimpan di $ENV_FILE"
         fi
     fi
 
@@ -128,46 +151,99 @@ EOF
     echo "========================================="
 }
 
+# Pure Bash Interactive Fallback / Text Toggle Menu
+run_bash_custom_menu() {
+    local opt_deps=true
+    local opt_cli=true
+    local opt_daemon=true
+    local opt_boot=true
+    local opt_env=true
+    local opt_creds=true
+
+    while true; do
+        clear 2>/dev/null || true
+        echo "========================================="
+        echo "   🎛️ CUSTOM COMPONENT SELECTION (HP)   "
+        echo "========================================="
+        echo "Ketik angka [1-6] untuk toggle centang [X]:"
+        echo ""
+        [ "$opt_deps" = true ] && echo "  [1] [X] Python Libraries (psutil/matplotlib)" || echo "  [1] [ ] Python Libraries (psutil/matplotlib)"
+        [ "$opt_cli" = true ] && echo "  [2] [X] CLI Executable (notify-tele)" || echo "  [2] [ ] CLI Executable (notify-tele)"
+        [ "$opt_daemon" = true ] && echo "  [3] [X] Bot Daemon Service (tele-sysadmin-daemon)" || echo "  [3] [ ] Bot Daemon Service (tele-sysadmin-daemon)"
+        [ "$opt_boot" = true ] && echo "  [4] [X] Auto-Boot Service (tele-sysadmin-boot)" || echo "  [4] [ ] Auto-Boot Service (tele-sysadmin-boot)"
+        [ "$opt_env" = true ] && echo "  [5] [X] File Config (.env)" || echo "  [5] [ ] File Config (.env)"
+        [ "$opt_creds" = true ] && echo "  [6] [X] Input Bot Token & Chat ID" || echo "  [6] [ ] Input Bot Token & Chat ID"
+        echo ""
+        echo "  [7] 🚀 MULAI INSTALASI SEKARANG"
+        echo "  [0] ❌ Batal"
+        echo "========================================="
+        read -p "Pilihan Anda: " choice
+
+        case $choice in
+            1) opt_deps=$([ "$opt_deps" = true ] && echo false || echo true) ;;
+            2) opt_cli=$([ "$opt_cli" = true ] && echo false || echo true) ;;
+            3) opt_daemon=$([ "$opt_daemon" = true ] && echo false || echo true) ;;
+            4) opt_boot=$([ "$opt_boot" = true ] && echo false || echo true) ;;
+            5) opt_env=$([ "$opt_env" = true ] && echo false || echo true) ;;
+            6) opt_creds=$([ "$opt_creds" = true ] && echo false || echo true) ;;
+            7) run_install $opt_deps $opt_cli $opt_daemon $opt_boot $opt_env $opt_creds; break ;;
+            0) echo "Dibatalkan."; break ;;
+            *) echo "Pilihan tidak valid." ;;
+        esac
+    done
+}
+
 # Non-interactive execution
 if [ "$NON_INTERACTIVE" = true ]; then
     run_install true true true true true false
     exit 0
 fi
 
-# TUI Interactive Wizard using Whiptail
+calc_dimensions
+
+# TUI Interactive Wizard using Whiptail with Mobile Responsive bounds
 if command -v whiptail >/dev/null 2>&1; then
-    CHOICE=$(whiptail --title "🤖 tele-sysadmin Interactive Setup Wizard" --menu \
-    "Pilih Template Instalasi yang kamu inginkan:\n(Gunakan tombol PANAH dan ENTER)" 16 72 4 \
-    "1" "🚀 FULL SUITE (Rekomendasi - Install Seluruh Komponen Bot & Service)" \
-    "2" "📢 NOTIFIER ONLY (Hanya CLI Notifikasi & Boot Alert)" \
-    "3" "🐚 DAEMON ONLY (Hanya CLI & Bot Command Daemon)" \
-    "4" "🎛️ CUSTOM SELECTION (Pilih Komponen Spesifik dengan Checkboxes)" \
-    3>&1 1>&2 2>&3)
+    TMP_MENU=$(mktemp)
+    whiptail --title "🤖 tele-sysadmin Setup" --menu \
+    "Pilih Template Instalasi:\n(Gunakan PANAH & ENTER)" $BOX_HEIGHT $BOX_WIDTH $MENU_HEIGHT \
+    "1" "🚀 FULL SUITE (Install Semua)" \
+    "2" "📢 NOTIFIER ONLY (CLI + Boot Alert)" \
+    "3" "🐚 DAEMON ONLY (CLI + Bot Daemon)" \
+    "4" "🎛️ CUSTOM (Whiptail Checkbox)" \
+    "5" "📱 CUSTOM HP (Angka 1-6 Toggle)" 2> "$TMP_MENU" || echo "0" > "$TMP_MENU"
+
+    CHOICE=$(cat "$TMP_MENU")
+    rm -f "$TMP_MENU"
 
     case $CHOICE in
         1)
-            # Full Suite
             run_install true true true true true true
             ;;
         2)
-            # Notifier Only
             run_install true true false true true true
             ;;
         3)
-            # Daemon Only
             run_install true true true false true true
             ;;
         4)
-            # Custom Checkbox selection
-            SELECTIONS=$(whiptail --title "🎛️ Custom Component Checkbox Selection" --checklist \
-            "Gunakan PANAH untuk navigasi, SPASI untuk centang/hapus [X], ENTER untuk konfirmasi:" 18 72 6 \
-            "DEPS" "Python dependencies (psutil, matplotlib)" ON \
-            "CLI" "Executable CLI notify-tele" ON \
-            "DAEMON" "Bot Command Daemon Service (tele-sysadmin-daemon)" ON \
-            "BOOT" "Auto-Boot Notification Service (tele-sysadmin-boot)" ON \
-            "ENV" "Buat file konfigurasi .env" ON \
-            "CREDS" "Input Bot Token & Chat ID interaktif" ON \
-            3>&1 1>&2 2>&3)
+            # Custom Checkbox selection using whiptail and tempfile
+            TMP_CHECK=$(mktemp)
+            whiptail --title "🎛️ Custom Selection" --checklist \
+            "Gunakan SPASI untuk toggle [X], ENTER untuk OK:" $BOX_HEIGHT $BOX_WIDTH $MENU_HEIGHT \
+            "DEPS" "Python Libraries" ON \
+            "CLI" "notify-tele CLI Tool" ON \
+            "DAEMON" "Master Bot Daemon" ON \
+            "BOOT" "Auto-Boot Alert" ON \
+            "ENV" "File Config (.env)" ON \
+            "CREDS" "Token & Chat ID Setup" ON 2> "$TMP_CHECK" || echo "" > "$TMP_CHECK"
+
+            SELECTIONS=$(cat "$TMP_CHECK")
+            rm -f "$TMP_CHECK"
+
+            if [ -z "$SELECTIONS" ]; then
+                echo "Tidak ada komponen yang dipilih. Batal."
+                exit 0
+            fi
 
             inc_deps=false
             inc_cli=false
@@ -185,19 +261,14 @@ if command -v whiptail >/dev/null 2>&1; then
 
             run_install $inc_deps $inc_cli $inc_daemon $inc_boot $inc_env $inc_creds
             ;;
+        5)
+            run_bash_custom_menu
+            ;;
         *)
             echo "Instalasi dibatalkan."
             exit 0
             ;;
     esac
 else
-    # Simple CLI fallback
-    echo "1) Full Suite (Install All)"
-    echo "2) Custom Install"
-    read -p "Pilih [1]: " c
-    if [ "$c" == "2" ]; then
-        run_install true true true true true true
-    else
-        run_install true true true true true true
-    fi
+    run_bash_custom_menu
 fi
