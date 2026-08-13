@@ -43,8 +43,13 @@ if [ -f "$SCRIPT_DIR/telegram-bot-daemon.service" ]; then
     systemctl restart telegram-bot-daemon.service || true
 fi
 
+if [ ! -f "$SCRIPT_DIR/.env" ] && [ -f "$SCRIPT_DIR/.env.example" ]; then
+    echo "[Config] Creating .env file from .env.example..."
+    cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+fi
+
 echo ""
 echo "Installation complete!"
-echo "Next step: Configure your Bot Token & Chat ID by running:"
+echo "Next step: Set your credentials in .env file or run:"
 echo "  notify-tele --set-config --token \"YOUR_BOT_TOKEN\" --chatid \"YOUR_CHAT_ID\""
 echo "========================================="

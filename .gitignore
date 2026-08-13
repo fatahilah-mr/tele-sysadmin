@@ -1,7 +1,10 @@
-# Ignore sensitive configs & local files
-.telegram_config
+# Ignore sensitive configs & environment secrets
+.env
 *.env
-.env*
+.telegram_config
 __pycache__/
 *.pyc
 .DS_Store
+
+# Explicitly track .env.example template
+!.env.example

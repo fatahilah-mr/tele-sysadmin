@@ -10,7 +10,11 @@ import re
 import glob
 from datetime import datetime
 
-CONFIG_PATH = os.path.expanduser("~/.telegram_config")
+CONFIG_PATHS = [
+    os.path.expanduser("~/.telegram_config"),
+    os.path.expanduser("~/.env"),
+    ".env"
+]
 LOG_PATH = "/var/log/telegram-notifier.log"
 FALLBACK_LOG_PATH = os.path.expanduser("~/.telegram_notifier.log")
 
@@ -28,20 +32,21 @@ def load_config():
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
-    if os.path.exists(CONFIG_PATH):
-        try:
-            with open(CONFIG_PATH, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        k, v = k.strip(), v.strip().strip('"').strip("'")
-                        if k == "TELEGRAM_BOT_TOKEN" and not bot_token:
-                            bot_token = v
-                        elif k == "TELEGRAM_CHAT_ID" and not chat_id:
-                            chat_id = v
-        except Exception:
-            pass
+    for path in CONFIG_PATHS:
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip('"').strip("'")
+                            if k == "TELEGRAM_BOT_TOKEN" and not bot_token:
+                                bot_token = v
+                            elif k == "TELEGRAM_CHAT_ID" and not chat_id:
+                                chat_id = v
+            except Exception:
+                pass
 
     return bot_token, chat_id
 

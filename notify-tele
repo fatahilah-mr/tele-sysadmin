@@ -8,9 +8,15 @@ import urllib.error
 import json
 from datetime import datetime
 
-CONFIG_PATH = os.path.expanduser("~/.telegram_config")
 PRIMARY_LOG_PATH = "/var/log/telegram-notifier.log"
 FALLBACK_LOG_PATH = os.path.expanduser("~/.telegram_notifier.log")
+
+CONFIG_PATHS = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+    os.path.expanduser("~/telegram-notifier/.env"),
+    os.path.expanduser("~/.env"),
+    os.path.expanduser("~/.telegram_config"),
+]
 
 # Predefined categories with emojis and headers
 CATEGORIES = {
@@ -37,7 +43,6 @@ CATEGORIES = {
 
 def get_log_file():
     try:
-        # Test if writable to primary
         with open(PRIMARY_LOG_PATH, "a") as f:
             pass
         return PRIMARY_LOG_PATH
@@ -82,29 +87,45 @@ def load_config():
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
-    if os.path.exists(CONFIG_PATH):
-        try:
-            with open(CONFIG_PATH, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        k, v = k.strip(), v.strip().strip('"').strip("'")
-                        if k == "TELEGRAM_BOT_TOKEN" and not bot_token:
-                            bot_token = v
-                        elif k == "TELEGRAM_CHAT_ID" and not chat_id:
-                            chat_id = v
-        except Exception:
-            pass
+    for path in CONFIG_PATHS:
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip('"').strip("'")
+                            if k == "TELEGRAM_BOT_TOKEN" and not bot_token:
+                                bot_token = v
+                            elif k == "TELEGRAM_CHAT_ID" and not chat_id:
+                                chat_id = v
+            except Exception:
+                pass
 
     return bot_token, chat_id
 
-def save_config(bot_token, chat_id):
-    with open(CONFIG_PATH, "w") as f:
+def save_config(bot_token, chat_id, target_env=None):
+    save_path = target_env or os.path.expanduser("~/telegram-notifier/.env")
+    parent_dir = os.path.dirname(save_path)
+    if parent_dir and not os.path.exists(parent_dir):
+        os.makedirs(parent_dir, exist_ok=True)
+
+    with open(save_path, "w") as f:
         f.write(f'TELEGRAM_BOT_TOKEN="{bot_token}"\n')
         f.write(f'TELEGRAM_CHAT_ID="{chat_id}"\n')
-    os.chmod(CONFIG_PATH, 0o600)
-    print(f"Config saved to {CONFIG_PATH}")
+    os.chmod(save_path, 0o600)
+    print(f"Config saved to {save_path}")
+
+    # Also sync to ~/.telegram_config for fallback
+    try:
+        fallback = os.path.expanduser("~/.telegram_config")
+        with open(fallback, "w") as f:
+            f.write(f'TELEGRAM_BOT_TOKEN="{bot_token}"\n')
+            f.write(f'TELEGRAM_CHAT_ID="{chat_id}"\n')
+        os.chmod(fallback, 0o600)
+    except Exception:
+        pass
 
 def send_telegram_notification(category, title, message, bot_token, chat_id, custom_emoji=None):
     cat_key = category.lower()
@@ -170,7 +191,7 @@ def main():
     parser.add_argument("type", nargs="?", default="info", help="Type/Category of notification (success, error, warning, info, task, deploy, backup, cron, security, db, or ANY custom category name)")
     parser.add_argument("title", nargs="?", default="Notifikasi Baru", help="Title of the notification")
     parser.add_argument("message", nargs="?", default="", help="Detailed message body")
-    parser.add_argument("--set-config", action="store_true", help="Set BOT_TOKEN and CHAT_ID")
+    parser.add_argument("--set-config", action="store_true", help="Set BOT_TOKEN and CHAT_ID in .env file")
     parser.add_argument("--token", help="Telegram Bot Token")
     parser.add_argument("--chatid", help="Telegram Chat ID")
     parser.add_argument("--emoji", help="Custom emoji icon to override default")
@@ -197,7 +218,7 @@ def main():
 
     if not bot_token or not chat_id:
         print("Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing!", file=sys.stderr)
-        print("Run `notify-tele --set-config --token YOUR_TOKEN --chatid YOUR_CHAT_ID` to set up.", file=sys.stderr)
+        print("Run `notify-tele --set-config --token YOUR_TOKEN --chatid YOUR_CHAT_ID` or create a `.env` file.", file=sys.stderr)
         sys.exit(1)
 
     send_telegram_notification(args.type, args.title, args.message, bot_token, chat_id, custom_emoji=args.emoji)
