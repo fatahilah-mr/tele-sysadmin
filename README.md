@@ -1,17 +1,36 @@
-# 📱 Telegram Notifier CLI (`notify-tele`)
+# 📱 Telegram Notifier Suite & Bot Commands (`notify-tele`)
 
-Dokumentasi dan tool sederhana untuk mengirimkan **notifikasi kustom berdasarkan jenis/kategori** dari VPS langsung ke Telegram Bot kamu.
+Dokumentasi dan suite lengkap untuk:
+1. Mengirim **notifikasi kustom berdasarkan jenis/kategori** dari VPS ke Telegram Bot.
+2. Membaca **log notifikasi & status VPS secara interaktif langsung dari chat Telegram Bot** (tanpa perlu membuka VPS).
 
-Tool ini sangat ringan (idle RAM 0 MB), berbasis Python standard library, mendukung **pencatatan log otomatis**, dan dirancang agar mudah dipicu oleh pengguna (User) maupun AI Coding Assistant (Antigravity).
+Tool ini sangat ringan (daemon RAM ~3 MB), berbasis Python standard library, dan dirancang agar mudah dipicu oleh pengguna (User) maupun AI Coding Assistant (Antigravity).
 
 ---
 
 ## 📂 Isi Folder
 
-* `notify-tele` : Script utama (Python 3 executable).
-* `install.sh` : Script installer otomatis untuk menyalin `notify-tele` ke `/usr/local/bin/` & mendaftarkan boot service.
-* `telegram-boot-notify.service` : Systemd unit file untuk notifikasi otomatis saat VPS booting/reboot.
+* `notify-tele` : Script CLI pengirim notifikasi.
+* `tele-bot-daemon` : Daemon penerima perintah interaktif dari Telegram.
+* `install.sh` : Script installer otomatis.
+* `telegram-boot-notify.service` : Systemd service notifikasi boot otomatis.
+* `telegram-bot-daemon.service` : Systemd service daemon bot interaktif.
 * `README.md` : Dokumentasi lengkap ini.
+
+---
+
+## 🤖 Perintah Interaktif Langsung dari Telegram Bot
+
+Kamu bisa mengetikkan perintah berikut langsung di obrolan Bot Telegram kamu di HP/Desktop:
+
+| Perintah | Deskripsi |
+| :--- | :--- |
+| `/logs` atau `/logs 15` | Menampilkan riwayat log notifikasi VPS terbaru |
+| `/status` | Menampilkan penggunaan RAM, Disk (/), Uptime & Waktu VPS |
+| `/ping` | Mengecek apakah VPS aktif & merespon |
+| `/help` | Menampilkan menu bantuan perintah |
+
+🔒 *Keamanan: Bot hanya akan merespon perintah yang dikirim oleh Chat ID milik kamu.*
 
 ---
 
@@ -35,14 +54,14 @@ notify-tele --set-config --token "BOT_TOKEN_KAMU" --chatid "CHAT_ID_KAMU"
 
 ---
 
-## 📋 Panduan Penggunaan CLI
+## 📋 Panduan Penggunaan CLI di VPS
 
 Format dasar perintah:
 ```bash
 notify-tele [kategori] "[Judul]" "[Pesan Detail]"
 ```
 
-### 1. Menggunakan Kategori Bawaan
+### Kategori Bawaan
 
 | Kategori | Emoji | Contoh Perintah |
 | :--- | :---: | :--- |
@@ -58,45 +77,9 @@ notify-tele [kategori] "[Judul]" "[Pesan Detail]"
 | `cron` | ⏰ | `notify-tele cron "Clean Temp" "File temp berhasil dibersihkan."` |
 | `server` | 🖥️ | `notify-tele server "Reboot Done" "Server selesai dipulihkan."` |
 
-### 2. Bebas Pakai Nama Kategori Apapun
-Kamu tidak dibatasi oleh kategori di atas. Bebas membuat nama kategori sendiri:
-```bash
-notify-tele pembayaran "Invoice #1092" "Pembayaran diterima via Transfer BCA"
-```
-
-### 3. Menyisipkan Emoji Kustom (`--emoji`)
-```bash
-notify-tele gajian "Bonus Masuk" "Transfer sebesar Rp 5.000.000" --emoji "💰"
-```
-
----
-
-## 📜 Fitur Log & History Notifikasi
-
-Setiap notifikasi yang terkirim (maupun yang gagal) secara otomatis dicatat ke file log sistem di `/var/log/telegram-notifier.log`.
-
-### Melihat Log Notifikasi via Terminal:
-```bash
-# Lihat 20 log notifikasi terakhir
-notify-tele --logs
-
-# Atau singkatannya (-l 10 untuk melihat 10 log terakhir):
-notify-tele -l 10
-```
-
----
-
-## 🤖 Penggunaan Oleh AI Agent (Antigravity)
-
-Setiap kali kamu meminta AI Agent untuk mengerjakan tugas di VPS dan ingin mendapat notifikasi saat selesai, kamu tinggal bilang:
-
-> *"Tolong kerjakan X, kalau sudah selesai kirim notifikasi ke Telegram ya."*
-
-AI Agent akan otomatis mengeksekusi perintah CLI `notify-tele` di latar belakang server, dan notifikasi berformat HTML beserta timestamp server akan langsung masuk ke aplikasi Telegram kamu!
-
 ---
 
 ## ⚡ Detail Spesifikasi Teknis
-* **Bahasa**: Python 3 (menggunakan modul bawaan `urllib.request` & `json`, tanpa perlu install `pip`).
-* **Log Location**: `/var/log/telegram-notifier.log`
-* **Auto-Boot Service**: Enabled via `/etc/systemd/system/telegram-boot-notify.service`
+* **Bahasa**: Python 3 (standard library).
+* **Daemon RAM Usage**: Hanya **~3 MB** saja.
+* **Security**: Enforces Chat ID verification.

@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+import os
+import sys
+import time
+import subprocess
+import urllib.request
+import urllib.parse
+import json
+from datetime import datetime
+
+CONFIG_PATH = os.path.expanduser("~/.telegram_config")
+LOG_PATH = "/var/log/telegram-notifier.log"
+FALLBACK_LOG_PATH = os.path.expanduser("~/.telegram_notifier.log")
+
+def load_config():
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k, v = k.strip(), v.strip().strip('"').strip("'")
+                        if k == "TELEGRAM_BOT_TOKEN" and not bot_token:
+                            bot_token = v
+                        elif k == "TELEGRAM_CHAT_ID" and not chat_id:
+                            chat_id = v
+        except Exception:
+            pass
+
+    return bot_token, chat_id
+
+def send_message(bot_token, chat_id, text):
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        print(f"Error sending message: {e}", file=sys.stderr)
+        return None
+
+def get_logs(limit=10):
+    path = LOG_PATH if os.path.exists(LOG_PATH) else FALLBACK_LOG_PATH
+    if not os.path.exists(path):
+        return "<i>Belum ada log notifikasi yang tercatat.</i>"
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            recent = lines[-limit:] if len(lines) > limit else lines
+            if not recent:
+                return "<i>Log kosong.</i>"
+            
+            output = "<b>📜 Riwayat Log Notifikasi (Terbaru):</b>\n\n"
+            for l in recent:
+                # Escape html characters
+                safe_l = l.strip().replace("<", "&lt;").replace(">", "&gt;")
+                output += f"<code>{safe_l}</code>\n\n"
+            return output
+    except Exception as e:
+        return f"Gagal membaca log: {e}"
+
+def get_system_status():
+    try:
+        # Uptime
+        uptime = subprocess.check_output(["uptime", "-p"]).decode().strip()
+        # Memory
+        free_out = subprocess.check_output(["free", "-h"]).decode()
+        mem_line = [line for line in free_out.splitlines() if line.startswith("Mem:")][0].split()
+        mem_total, mem_used, mem_avail = mem_line[1], mem_line[2], mem_line[6]
+        # Disk
+        df_out = subprocess.check_output(["df", "-h", "/"]).decode()
+        disk_line = df_out.splitlines()[1].split()
+        disk_total, disk_used, disk_avail, disk_pct = disk_line[1], disk_line[2], disk_line[3], disk_line[4]
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        status_text = (
+            "<b>🖥️ Status VPS Debian:</b>\n\n"
+            f"⏱️ <b>Uptime:</b> {uptime}\n"
+            f"🧠 <b>RAM:</b> Terpakai {mem_used} / Total {mem_total} (Bebas: {mem_avail})\n"
+            f"💾 <b>Disk (/):</b> Terpakai {disk_used} ({disk_pct}) / Total {disk_total} (Sisa: {disk_avail})\n\n"
+            f"<i>Waktu Server: {now}</i>"
+        )
+        return status_text
+    except Exception as e:
+        return f"Gagal mengambil status VPS: {e}"
+
+def handle_command(cmd, bot_token, chat_id):
+    parts = cmd.strip().split()
+    command = parts[0].lower()
+
+    if command in ["/start", "/help"]:
+        help_text = (
+            "<b>🤖 Command Bot Telegram VPS</b>\n\n"
+            "Perintah yang tersedia:\n"
+            "• <code>/logs</code> atau <code>/logs 15</code> — Lihat riwayat log notifikasi VPS\n"
+            "• <code>/status</code> — Cek penggunaan RAM, Disk & Uptime VPS\n"
+            "• <code>/ping</code> — Tes koneksi & keaktifan VPS\n"
+            "• <code>/help</code> — Tampilkan pesan bantuan ini"
+        )
+        send_message(bot_token, chat_id, help_text)
+
+    elif command in ["/logs", "/log"]:
+        limit = 10
+        if len(parts) > 1 and parts[1].isdigit():
+            limit = int(parts[1])
+            if limit > 30:
+                limit = 30
+        logs_text = get_logs(limit)
+        send_message(bot_token, chat_id, logs_text)
+
+    elif command == "/status":
+        status_text = get_system_status()
+        send_message(bot_token, chat_id, status_text)
+
+    elif command == "/ping":
+        send_message(bot_token, chat_id, "<b>Pong! ⚡</b>\nVPS Debian kamu aktif & berjalan normal.")
+
+    else:
+        send_message(bot_token, chat_id, "Perintah tidak dikenali. Ketik <code>/help</code> untuk melihat daftar perintah.")
+
+def main():
+    bot_token, owner_chat_id = load_config()
+
+    if not bot_token or not owner_chat_id:
+        print("Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing in config!", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Starting Telegram Bot Command Daemon for Chat ID {owner_chat_id}...")
+    offset = 0
+
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{bot_token}/getUpdates?offset={offset}&timeout=30"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=35) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                if data.get("ok"):
+                    for update in data.get("result", []):
+                        offset = update["update_id"] + 1
+                        message = update.get("message", {})
+                        from_id = str(message.get("from", {}).get("id", ""))
+                        text = message.get("text", "")
+
+                        # Security check: only respond to owner
+                        if from_id == str(owner_chat_id) and text.startswith("/"):
+                            print(f"Received command: {text} from owner {from_id}")
+                            handle_command(text, bot_token, owner_chat_id)
+        except urllib.error.URLError:
+            time.sleep(5)
+        except Exception as e:
+            print(f"Error in long polling loop: {e}", file=sys.stderr)
+            time.sleep(5)
+
+if __name__ == "__main__":
+    main()
