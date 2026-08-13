@@ -1,0 +1,17 @@
+chart - Foto grafik tren memori RAM (24 jam)
+services - Status & kelola service systemctl
+docker - Status & kelola container Docker
+top - Top 10 proses pemakai RAM terbesar
+status - Cek RAM, Disk, Uptime VPS
+cmd - Jalankan perintah bash terminal
+shell - Toggle Mode Terminal Interaktif & Keyboard
+tab - Autocomplete file & folder (tombol Tab)
+read - Baca isi file teks di VPS
+write - Tulis / overwrite isi file teks
+get - Download file VPS sebagai dokumen
+backup - Buat archive backup database/folder
+ufw - Status Firewall UFW
+fail2ban - Status Keamanan Fail2ban
+logs - Lihat riwayat log notifikasi VPS
+ping - Tes koneksi & status VPS
+help - Bantuan & daftar perintah master

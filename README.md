@@ -17,7 +17,9 @@ tele-sysadmin/
 ├── .env.example                # Template variabel lingkungan
 ├── .gitignore                  # Filter git tingkat produksi
 ├── README.md                   # Dokumentasi publik berstandar industri
-├── install.sh                  # Script installer otomatis 1-klik
+├── command.txt                 # Format Perintah untuk @BotFather (/setcommands)
+├── setup.sh / install.sh       # Script installer TUI interaktif
+├── requirements.txt            # Dependensi Python (psutil, matplotlib)
 │
 ├── config/                     # Modul Konfigurasi Sistem
 │   ├── __init__.py
@@ -97,6 +99,12 @@ cd tele-sysadmin
    * **🎛️ CUSTOM SELECTION**: Pilih komponen secara spesifik dengan **Checkboxes** (Gunakan tombol **SPASI** untuk centang `[X]` dan **ENTER** untuk konfirmasi).
 2. **Interactive Credential Input**: Otomatis menampilkan dialog input untuk memasukkan `TELEGRAM_BOT_TOKEN` dan `TELEGRAM_CHAT_ID` saat setup.
 3. **Non-Interactive Mode**: Untuk install otomatis tanpa prompt, jalankan `./install.sh -y`.
+
+### 📲 Konfigurasi Menu Perintah di @BotFather
+Untuk memasukkan daftar perintah bot ke menu Telegram secara resmi via `@BotFather`:
+1. Buka chat dengan **[@BotFather](https://t.me/BotFather)** di Telegram.
+2. Ketik `/setcommands` dan pilih bot kamu.
+3. Copy & paste seluruh isi file [`command.txt`](file:///root/tele-sysadmin/command.txt) ke chat `@BotFather`.
 
 ---
 
