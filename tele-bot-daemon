@@ -6,11 +6,22 @@ import subprocess
 import urllib.request
 import urllib.parse
 import json
+import re
 from datetime import datetime
 
 CONFIG_PATH = os.path.expanduser("~/.telegram_config")
 LOG_PATH = "/var/log/telegram-notifier.log"
 FALLBACK_LOG_PATH = os.path.expanduser("~/.telegram_notifier.log")
+
+# Global state for session
+session_cwd = os.path.expanduser("~")
+shell_mode = False
+
+def strip_ansi(text):
+    return re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', text)
+
+def escape_html(text):
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 def load_config():
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -50,6 +61,22 @@ def send_message(bot_token, chat_id, text):
         print(f"Error sending message: {e}", file=sys.stderr)
         return None
 
+def send_chunked_output(bot_token, chat_id, header, output_text):
+    clean = strip_ansi(output_text)
+    escaped = escape_html(clean)
+    
+    # Telegram max message length is 4096
+    max_len = 3800
+    if len(escaped) <= max_len:
+        msg = f"{header}\n<pre><code>{escaped}</code></pre>"
+        send_message(bot_token, chat_id, msg)
+    else:
+        # Split into chunks
+        chunks = [escaped[i:i+max_len] for i in range(0, len(escaped), max_len)]
+        send_message(bot_token, chat_id, f"{header} (Part 1/{len(chunks)}):")
+        for idx, chunk in enumerate(chunks):
+            send_message(bot_token, chat_id, f"<pre><code>{chunk}</code></pre>")
+
 def get_logs(limit=10):
     path = LOG_PATH if os.path.exists(LOG_PATH) else FALLBACK_LOG_PATH
     if not os.path.exists(path):
@@ -64,8 +91,7 @@ def get_logs(limit=10):
             
             output = "<b>📜 Riwayat Log Notifikasi (Terbaru):</b>\n\n"
             for l in recent:
-                # Escape html characters
-                safe_l = l.strip().replace("<", "&lt;").replace(">", "&gt;")
+                safe_l = escape_html(l.strip())
                 output += f"<code>{safe_l}</code>\n\n"
             return output
     except Exception as e:
@@ -73,13 +99,11 @@ def get_logs(limit=10):
 
 def get_system_status():
     try:
-        # Uptime
         uptime = subprocess.check_output(["uptime", "-p"]).decode().strip()
-        # Memory
         free_out = subprocess.check_output(["free", "-h"]).decode()
         mem_line = [line for line in free_out.splitlines() if line.startswith("Mem:")][0].split()
         mem_total, mem_used, mem_avail = mem_line[1], mem_line[2], mem_line[6]
-        # Disk
+
         df_out = subprocess.check_output(["df", "-h", "/"]).decode()
         disk_line = df_out.splitlines()[1].split()
         disk_total, disk_used, disk_avail, disk_pct = disk_line[1], disk_line[2], disk_line[3], disk_line[4]
@@ -90,46 +114,135 @@ def get_system_status():
             "<b>🖥️ Status VPS Debian:</b>\n\n"
             f"⏱️ <b>Uptime:</b> {uptime}\n"
             f"🧠 <b>RAM:</b> Terpakai {mem_used} / Total {mem_total} (Bebas: {mem_avail})\n"
-            f"💾 <b>Disk (/):</b> Terpakai {disk_used} ({disk_pct}) / Total {disk_total} (Sisa: {disk_avail})\n\n"
+            f"💾 <b>Disk (/):</b> Terpakai {disk_used} ({disk_pct}) / Total {disk_total} (Sisa: {disk_avail})\n"
+            f"📂 <b>Shell Working Dir:</b> <code>{session_cwd}</code>\n\n"
             f"<i>Waktu Server: {now}</i>"
         )
         return status_text
     except Exception as e:
         return f"Gagal mengambil status VPS: {e}"
 
-def handle_command(cmd, bot_token, chat_id):
-    parts = cmd.strip().split()
-    command = parts[0].lower()
+def execute_bash_command(cmd_str):
+    global session_cwd
+    
+    cmd_str = cmd_str.strip()
+    
+    # Handle 'cd' commands explicitly
+    if cmd_str.startswith("cd ") or cmd_str == "cd":
+        target = cmd_str[3:].strip() if len(cmd_str) > 2 else os.path.expanduser("~")
+        if not target:
+            target = os.path.expanduser("~")
+        
+        # Handle relative or absolute path
+        new_dir = os.path.abspath(os.path.join(session_cwd, target))
+        if os.path.exists(new_dir) and os.path.isdir(new_dir):
+            session_cwd = new_dir
+            return True, f"Directory changed to: {session_cwd}"
+        else:
+            return False, f"Directory not found: {target}"
 
-    if command in ["/start", "/help"]:
+    try:
+        proc = subprocess.run(
+            cmd_str,
+            shell=True,
+            cwd=session_cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=30,
+            executable="/bin/bash"
+        )
+        output = proc.stdout.decode("utf-8", errors="replace")
+        if not output.strip():
+            output = "(Command executed with no output - exit code 0)"
+        return (proc.returncode == 0), output
+    except subprocess.TimeoutExpired:
+        return False, "Command timed out (exceeded 30 seconds limit)."
+    except Exception as e:
+        return False, f"Execution error: {e}"
+
+def handle_command(text, bot_token, chat_id):
+    global shell_mode, session_cwd
+    
+    text = text.strip()
+    parts = text.split()
+    first_word = parts[0].lower() if parts else ""
+
+    if first_word in ["/start", "/help"]:
+        shell_status = "🟢 AKTIF" if shell_mode else "🔴 NON-AKTIF"
         help_text = (
-            "<b>🤖 Command Bot Telegram VPS</b>\n\n"
-            "Perintah yang tersedia:\n"
-            "• <code>/logs</code> atau <code>/logs 15</code> — Lihat riwayat log notifikasi VPS\n"
-            "• <code>/status</code> — Cek penggunaan RAM, Disk & Uptime VPS\n"
-            "• <code>/ping</code> — Tes koneksi & keaktifan VPS\n"
-            "• <code>/help</code> — Tampilkan pesan bantuan ini"
+            "<b>🤖 Remote VPS Terminal Bot</b>\n\n"
+            "<b>📌 Command Terminal:</b>\n"
+            "• <code>/cmd &lt;command&gt;</code> — Jalankan perintah terminal (misal: <code>/cmd ls -la</code>)\n"
+            "• <code>/shell</code> — Mode Terminal Interaktif (Ketik perintah langsung tanpa <code>/cmd</code>)\n"
+
+            "• <code>/cd &lt;folder&gt;</code> — Pindah direktori kerja (saat ini: <code>" + session_cwd + "</code>)\n"
+            "• <code>/pwd</code> — Tampilkan direktori saat ini\n\n"
+            "<b>📊 Monitoring & Log:</b>\n"
+            "• <code>/logs</code> — Lihat log notifikasi VPS\n"
+            "• <code>/status</code> — Cek RAM, Disk, Uptime VPS\n"
+            "• <code>/ping</code> — Tes koneksi VPS\n\n"
+            f"<i>Mode Shell: {shell_status}</i>"
         )
         send_message(bot_token, chat_id, help_text)
 
-    elif command in ["/logs", "/log"]:
+    elif first_word == "/shell":
+        shell_mode = not shell_mode
+        if shell_mode:
+            msg = (
+                "<b>🐚 MODE TERMINAL INTERAKTIF: AKTIF</b>\n\n"
+                f"📂 <b>Direktori:</b> <code>{session_cwd}</code>\n"
+                "Ketik perintah terminal apa saja secara langsung di chat ini untuk mengeksekusinya di VPS.\n"
+                "Ketik <code>/shell</code> atau <code>/exit</code> untuk mematikan mode ini."
+            )
+        else:
+            msg = "<b>🔴 MODE TERMINAL INTERAKTIF: NON-AKTIF</b>\nSistem kembali ke mode normal."
+        send_message(bot_token, chat_id, msg)
+
+    elif first_word in ["/exit", "exit"] and shell_mode:
+        shell_mode = False
+        send_message(bot_token, chat_id, "<b>🔴 MODE TERMINAL INTERAKTIF: NON-AKTIF</b>")
+
+    elif first_word in ["/cmd", "/sh", "/exec"]:
+        if len(parts) < 2:
+            send_message(bot_token, chat_id, "Gunakan format: <code>/cmd &lt;perintah_terminal&gt;</code>\nContoh: <code>/cmd systemctl status nginx</code>")
+            return
+        cmd_to_run = text[len(parts[0]):].strip()
+        header = f"<b>🐚 Executing:</b> <code>{escape_html(cmd_to_run)}</code>\n📂 <b>CWD:</b> <code>{escape_html(session_cwd)}</code>"
+        success, out = execute_bash_command(cmd_to_run)
+        send_chunked_output(bot_token, chat_id, header, out)
+
+    elif first_word == "/cd":
+        target = text[3:].strip() if len(text) > 2 else ""
+        cmd_to_run = f"cd {target}"
+        success, out = execute_bash_command(cmd_to_run)
+        icon = "✅" if success else "❌"
+        send_message(bot_token, chat_id, f"{icon} {out}")
+
+    elif first_word == "/pwd":
+        send_message(bot_token, chat_id, f"📂 <b>Current Working Directory:</b> <code>{session_cwd}</code>")
+
+    elif first_word in ["/logs", "/log"]:
         limit = 10
         if len(parts) > 1 and parts[1].isdigit():
-            limit = int(parts[1])
-            if limit > 30:
-                limit = 30
+            limit = min(int(parts[1]), 30)
         logs_text = get_logs(limit)
         send_message(bot_token, chat_id, logs_text)
 
-    elif command == "/status":
+    elif first_word == "/status":
         status_text = get_system_status()
         send_message(bot_token, chat_id, status_text)
 
-    elif command == "/ping":
+    elif first_word == "/ping":
         send_message(bot_token, chat_id, "<b>Pong! ⚡</b>\nVPS Debian kamu aktif & berjalan normal.")
 
     else:
-        send_message(bot_token, chat_id, "Perintah tidak dikenali. Ketik <code>/help</code> untuk melihat daftar perintah.")
+        # If shell mode is active, treat any text as bash command
+        if shell_mode:
+            header = f"<b>🐚 Executing:</b> <code>{escape_html(text)}</code>\n📂 <b>CWD:</b> <code>{escape_html(session_cwd)}</code>"
+            success, out = execute_bash_command(text)
+            send_chunked_output(bot_token, chat_id, header, out)
+        else:
+            send_message(bot_token, chat_id, "Perintah tidak dikenali. Ketik <code>/cmd <command></code> atau aktifkan <code>/shell</code>. Gunakan <code>/help</code> untuk bantuan.")
 
 def main():
     bot_token, owner_chat_id = load_config()
@@ -154,9 +267,9 @@ def main():
                         from_id = str(message.get("from", {}).get("id", ""))
                         text = message.get("text", "")
 
-                        # Security check: only respond to owner
-                        if from_id == str(owner_chat_id) and text.startswith("/"):
-                            print(f"Received command: {text} from owner {from_id}")
+                        # Security check: strictly enforce owner Chat ID
+                        if from_id == str(owner_chat_id) and text:
+                            print(f"Received from owner ({from_id}): {text}")
                             handle_command(text, bot_token, owner_chat_id)
         except urllib.error.URLError:
             time.sleep(5)

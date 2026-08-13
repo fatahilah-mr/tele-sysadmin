@@ -1,8 +1,9 @@
-# 📱 Telegram Notifier Suite & Bot Commands (`notify-tele`)
+# 📱 Telegram Notifier Suite & Remote VPS Terminal (`notify-tele`)
 
 Dokumentasi dan suite lengkap untuk:
 1. Mengirim **notifikasi kustom berdasarkan jenis/kategori** dari VPS ke Telegram Bot.
-2. Membaca **log notifikasi & status VPS secara interaktif langsung dari chat Telegram Bot** (tanpa perlu membuka VPS).
+2. Membaca **log notifikasi & status VPS secara interaktif**.
+3. **Mengeksekusi perintah terminal VPS langsung dari Telegram Bot** (Remote Terminal / Shell via Telegram).
 
 Tool ini sangat ringan (daemon RAM ~3 MB), berbasis Python standard library, dan dirancang agar mudah dipicu oleh pengguna (User) maupun AI Coding Assistant (Antigravity).
 
@@ -11,26 +12,38 @@ Tool ini sangat ringan (daemon RAM ~3 MB), berbasis Python standard library, dan
 ## 📂 Isi Folder
 
 * `notify-tele` : Script CLI pengirim notifikasi.
-* `tele-bot-daemon` : Daemon penerima perintah interaktif dari Telegram.
+* `tele-bot-daemon` : Daemon penerima & eksekutor perintah terminal dari Telegram.
 * `install.sh` : Script installer otomatis.
 * `telegram-boot-notify.service` : Systemd service notifikasi boot otomatis.
-* `telegram-bot-daemon.service` : Systemd service daemon bot interaktif.
+* `telegram-bot-daemon.service` : Systemd service daemon terminal interaktif.
 * `README.md` : Dokumentasi lengkap ini.
 
 ---
 
-## 🤖 Perintah Interaktif Langsung dari Telegram Bot
+## 🐚 Akses Terminal VPS Langsung dari Chat Telegram Bot
 
-Kamu bisa mengetikkan perintah berikut langsung di obrolan Bot Telegram kamu di HP/Desktop:
+Kamu bisa mengeksekusi perintah bash / terminal VPS kamu langsung melalui chat Telegram:
 
-| Perintah | Deskripsi |
-| :--- | :--- |
-| `/logs` atau `/logs 15` | Menampilkan riwayat log notifikasi VPS terbaru |
-| `/status` | Menampilkan penggunaan RAM, Disk (/), Uptime & Waktu VPS |
-| `/ping` | Mengecek apakah VPS aktif & merespon |
-| `/help` | Menampilkan menu bantuan perintah |
+### 1. Perintah Sekali Jalan (`/cmd`)
+Gunakan format `/cmd <perintah>`:
+* `/cmd ls -la` — Melihat isi folder saat ini.
+* `/cmd systemctl status nginx` — Mengecek status service.
+* `/cmd df -h` — Mengecek sisa disk.
+* `/cmd free -h` — Mengecek penggunaan RAM.
+* `/cd /root/projects` — Pindah ke direktori tertentu.
+* `/pwd` — Melihat direktori kerja saat ini.
 
-🔒 *Keamanan: Bot hanya akan merespon perintah yang dikirim oleh Chat ID milik kamu.*
+### 2. Mode Terminal Interaktif (`/shell`)
+Ketik `/shell` di Telegram untuk mengaktifkan **Mode Terminal Interaktif**:
+* Setelah aktif, **setiap teks** yang kamu ketik di Telegram akan dianggap sebagai perintah terminal dan langsung dieksekusi di VPS!
+* Ketik `/shell` kembali atau `/exit` untuk mematikan mode ini.
+
+### 3. Perintah Monitoring & System
+* `/logs` atau `/logs 15` — Menampilkan riwayat log notifikasi VPS.
+* `/status` — Menampilkan penggunaan RAM, Disk, Uptime & Waktu VPS.
+* `/ping` — Mengecek status keaktifan VPS.
+
+🔒 *Keamanan: Bot dikunci secara ketat dan HANYA akan merespon perintah yang dikirim oleh Chat ID milik kamu (`5743328578`).*
 
 ---
 
@@ -54,32 +67,7 @@ notify-tele --set-config --token "BOT_TOKEN_KAMU" --chatid "CHAT_ID_KAMU"
 
 ---
 
-## 📋 Panduan Penggunaan CLI di VPS
-
-Format dasar perintah:
-```bash
-notify-tele [kategori] "[Judul]" "[Pesan Detail]"
-```
-
-### Kategori Bawaan
-
-| Kategori | Emoji | Contoh Perintah |
-| :--- | :---: | :--- |
-| `success` | ✅ | `notify-tele success "Backup OK" "Database berhasil di-backup."` |
-| `error` | ❌ | `notify-tele error "Build Error" "Terdapat syntax error pada index.js."` |
-| `warning` | ⚠️ | `notify-tele warning "RAM Menipis" "Penggunaan RAM mencapai 90%."` |
-| `info` | ℹ️ | `notify-tele info "Update Info" "Server akan maintenance jam 12 malam."` |
-| `task` | 🚀 | `notify-tele task "Refactor Finished" "Semua file telah diperbarui."` |
-| `deploy` | 🎉 | `notify-tele deploy "Deploy Selesai" "App v2.0 live di production."` |
-| `security` | 🔒 | `notify-tele security "SSH Alert" "Login baru terdeteksi dari IP X."` |
-| `database` | 🗄️ | `notify-tele database "Migration Done" "Tabel users berhasil di-migrate."` |
-| `backup` | 💾 | `notify-tele backup "Auto Backup" "Snapshot VPS tersimpan."` |
-| `cron` | ⏰ | `notify-tele cron "Clean Temp" "File temp berhasil dibersihkan."` |
-| `server` | 🖥️ | `notify-tele server "Reboot Done" "Server selesai dipulihkan."` |
-
----
-
 ## ⚡ Detail Spesifikasi Teknis
 * **Bahasa**: Python 3 (standard library).
-* **Daemon RAM Usage**: Hanya **~3 MB** saja.
-* **Security**: Enforces Chat ID verification.
+* **Daemon RAM Usage**: Hanya **~1.5 MB - 3 MB** saja.
+* **Security**: Strict Owner Chat ID Verification.
