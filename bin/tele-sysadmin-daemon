@@ -18,6 +18,7 @@ from core.security import verify_owner, RateLimiter
 from core.executor import execute_bash_command, escape_html, strip_ansi
 from core.logger import show_logs
 
+from modules.notifier import get_dynamic_server_info
 from modules.terminal import autocomplete_path, get_shell_keyboard
 from modules.file_editor import handle_file_editor_command, download_telegram_file, send_document
 from modules.system_monitor import get_system_status
@@ -269,7 +270,8 @@ def handle_command(text, bot_token, chat_id, document=None):
         send_message(bot_token, chat_id, status_text)
 
     elif first_word == "/ping":
-        send_message(bot_token, chat_id, "<b>Pong! ⚡</b>\nVPS Debian kamu aktif & berjalan normal.")
+        server_info = get_dynamic_server_info()
+        send_message(bot_token, chat_id, f"<b>Pong! ⚡</b>\nServer <code>{escape_html(server_info)}</code> aktif & berjalan normal.")
 
     else:
         if shell_mode:

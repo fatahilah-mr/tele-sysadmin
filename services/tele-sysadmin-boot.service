@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/notify-tele server "Server Booted" "VPS Debian telah selesai booting dan jaringan online."
+ExecStart=/usr/local/bin/notify-tele server "Server Booted" "Server telah selesai booting dan jaringan online."
 User=root
 RemainAfterExit=no
 
