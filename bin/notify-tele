@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--token", help="Telegram Bot Token")
     parser.add_argument("--chatid", help="Telegram Chat ID")
     parser.add_argument("--emoji", help="Custom emoji icon to override default")
+    parser.add_argument("--server", help="Custom server name label to override dynamic detection")
     parser.add_argument("--logs", "-l", nargs="?", const=20, type=int, help="Show recent notification logs (default: 20 entries)")
 
     args = parser.parse_args()
@@ -49,7 +50,7 @@ def main():
         print("Run `notify-tele --set-config --token YOUR_TOKEN --chatid YOUR_CHAT_ID` or create a `.env` file.", file=sys.stderr)
         sys.exit(1)
 
-    send_notification(args.type, args.title, args.message, bot_token, chat_id, custom_emoji=args.emoji)
+    send_notification(args.type, args.title, args.message, bot_token, chat_id, custom_emoji=args.emoji, server_name=args.server)
 
 if __name__ == "__main__":
     main()

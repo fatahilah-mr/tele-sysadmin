@@ -1,5 +1,8 @@
+import os
 import sys
 import json
+import socket
+import platform
 import urllib.request
 from datetime import datetime
 from core.logger import write_log
@@ -26,7 +29,24 @@ CATEGORIES = {
     "bot":      {"emoji": "🤖", "header": "BOT ACTION"},
 }
 
-def send_notification(category, title, message, bot_token, chat_id, custom_emoji=None):
+def get_dynamic_server_info():
+    hostname = socket.gethostname()
+    os_name = ""
+    if os.path.exists("/etc/os-release"):
+        try:
+            with open("/etc/os-release", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("PRETTY_NAME="):
+                        os_name = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+        except Exception:
+            pass
+    if not os_name:
+        os_name = f"{platform.system()} {platform.release()}"
+
+    return f"{hostname} ({os_name})"
+
+def send_notification(category, title, message, bot_token, chat_id, custom_emoji=None, server_name=None):
     cat_key = category.lower()
     if cat_key in CATEGORIES:
         cat_info = CATEGORIES[cat_key]
@@ -37,11 +57,12 @@ def send_notification(category, title, message, bot_token, chat_id, custom_emoji
         header = category.upper()
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    server_info = server_name or get_dynamic_server_info()
 
     html_text = f"{emoji} <b>[{header}] {title}</b>\n\n"
     if message:
         html_text += f"{message}\n\n"
-    html_text += f"<i>⏱️ {now} | Server: Debian VPS</i>"
+    html_text += f"<i>⏱️ {now} | Server: {server_info}</i>"
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
